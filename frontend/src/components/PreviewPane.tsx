@@ -1,0 +1,115 @@
+import { RefObject } from 'react'
+import type { Page } from '../lib/paginate'
+import { FitIcon, GearIcon, MinusIcon, PlusIcon } from './icons'
+import { IconButton } from './ui'
+
+interface PreviewPaneProps {
+  pages: Page[]
+  zoom: number
+  previewRef: RefObject<HTMLDivElement>
+  onZoomIn: () => void
+  onZoomOut: () => void
+  onZoomFit: () => void
+  onOpenSettings: () => void
+}
+
+const PW = 794
+const PH = 1123
+const GAP = 30
+
+const pageStyle: React.CSSProperties = {
+  width: '210mm',
+  height: '297mm',
+  marginBottom: GAP,
+  background: '#fff',
+  position: 'relative',
+  overflow: 'hidden',
+  boxShadow: '0 2px 8px rgba(61,57,41,.10), 0 14px 36px rgba(61,57,41,.08)',
+  borderRadius: 3,
+  padding: '20mm 15mm 20mm 30mm',
+  fontFamily: "'Times New Roman',Times,serif",
+  fontSize: '14pt',
+  lineHeight: 1.5,
+  color: '#000',
+}
+
+export function PreviewPane(props: PreviewPaneProps) {
+  const { pages, zoom } = props
+  return (
+    <section
+      className="flex min-h-0 flex-1 flex-col"
+      style={{ minWidth: 360, background: 'var(--preview-bg)' }}
+    >
+      <div
+        className="flex h-[42px] flex-shrink-0 items-center gap-1.5 overflow-hidden border-b pl-[18px] pr-2.5"
+        style={{ borderColor: 'var(--line)', background: 'var(--preview-bar)', flexWrap: 'nowrap' }}
+      >
+        <div className="flex flex-shrink-0 items-center gap-1.5">
+          <span className="whitespace-nowrap text-[11px] font-bold tracking-[.1em] text-muted">
+            ПРЕВЬЮ
+          </span>
+          <span
+            className="whitespace-nowrap rounded-[5px] px-1.5 py-px text-[10px] font-semibold tracking-wide"
+            style={{ background: 'var(--chip-bg)', color: 'var(--chip-text)' }}
+          >
+            DOCX
+          </span>
+          <span className="whitespace-nowrap text-[11px]" style={{ color: 'var(--faint)' }}>
+            A4 · Times 14 · 1,5
+          </span>
+        </div>
+        <div className="min-w-1 flex-1" />
+        <IconButton title="Уменьшить" onClick={props.onZoomOut} hoverBg="var(--hover-2)" size={28}>
+          <MinusIcon />
+        </IconButton>
+        <span
+          className="text-center text-xs text-soft"
+          style={{ width: 44, fontVariantNumeric: 'tabular-nums' }}
+        >
+          {Math.round(zoom * 100)}%
+        </span>
+        <IconButton title="Увеличить" onClick={props.onZoomIn} hoverBg="var(--hover-2)" size={28}>
+          <PlusIcon />
+        </IconButton>
+        <button
+          title="По ширине окна"
+          onClick={props.onZoomFit}
+          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-lg border-none bg-transparent px-2.5 text-[11.5px] font-medium text-soft hover:bg-hover-2"
+        >
+          <FitIcon />
+          По ширине
+        </button>
+        <div className="mx-1 h-4 w-px bg-line" />
+        <IconButton title="Настройки документа (ГОСТ)" onClick={props.onOpenSettings} hoverBg="var(--hover-2)" size={28}>
+          <GearIcon size={16} />
+        </IconButton>
+      </div>
+      <div ref={props.previewRef} className="flex-1 overflow-auto px-6 pb-[60px] pt-7">
+        <div
+          style={{
+            width: PW * zoom,
+            margin: '0 auto',
+            height: (pages.length || 1) * (PH + GAP) * zoom,
+            position: 'relative',
+          }}
+        >
+          <div style={{ transform: `scale(${zoom})`, transformOrigin: '0 0', width: PW }}>
+            {pages.length ? (
+              pages.map((p, i) => (
+                <div key={i} style={pageStyle} dangerouslySetInnerHTML={{ __html: p.html }} />
+              ))
+            ) : (
+              <div style={pageStyle}>
+                <div
+                  style={{ color: '#999', fontStyle: 'italic', textAlign: 'center', paddingTop: '40mm' }}
+                >
+                  Формируем превью…
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}

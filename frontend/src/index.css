@@ -1,0 +1,111 @@
+@import 'katex/dist/katex.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Палитра приложения. А4-страницы превью НЕ используют эти переменные
+   и всегда остаются белыми (как итоговый DOCX). */
+:root {
+  --paper: #faf9f5;
+  --ink: #3d3929;
+  --muted: #8a8470;
+  --soft: #6b6553;
+  --line: #e8e6dc;
+  --hover: #f0eee6;
+  --faint: #b3ac98;
+  --surface: #ffffff;
+  --edge: #e2dfd2;
+  --hover-2: #e8e5d8;
+  --warm: #b05730;
+  --warm-border: #e8d5cd;
+  --warm-bg: #faf0ec;
+  --avatar: #f3e3db;
+  --seg-active: #ffffff;
+  --toggle-off: #dcd9cd;
+  --preview-bg: #efede4;
+  --preview-bar: #f5f3ec;
+  --chip-bg: #e3dfd6;
+  --chip-text: #7a7563;
+  --header-bg: rgba(250, 249, 245, 0.92);
+  --overlay: rgba(61, 57, 41, 0.35);
+  --toast-bg: #3d3929;
+  --toast-text: #faf9f5;
+  --danger: #b3553e;
+  --scroll-thumb: rgba(135, 130, 111, 0.35);
+}
+
+.dark {
+  --paper: #1b1a17;
+  --ink: #e6e3d8;
+  --muted: #948f7e;
+  --soft: #aaa494;
+  --line: #33312a;
+  --hover: #2a2823;
+  --faint: #6e6859;
+  --surface: #242320;
+  --edge: #3a372f;
+  --hover-2: #363329;
+  --warm: #e08a68;
+  --warm-border: #4a3a33;
+  --warm-bg: #33291f;
+  --avatar: #3c2f28;
+  --seg-active: #403d33;
+  --toggle-off: #45423a;
+  --preview-bg: #141311;
+  --preview-bar: #201f1c;
+  --chip-bg: #33312a;
+  --chip-text: #a39d8b;
+  --header-bg: rgba(27, 26, 23, 0.92);
+  --overlay: rgba(0, 0, 0, 0.5);
+  --toast-bg: #e6e3d8;
+  --toast-text: #1b1a17;
+  --danger: #e07a5f;
+  --scroll-thumb: rgba(170, 164, 148, 0.35);
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+textarea:focus,
+input:focus {
+  outline: none;
+}
+
+::selection {
+  background: rgba(217, 119, 87, 0.28);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-fast {
+  animation: spin 0.7s linear infinite;
+}
