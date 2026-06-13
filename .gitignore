@@ -1,24 +1,105 @@
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Environment variables
 .env
+.env.local
+.env.*.local
 
-# Node
+# --- Node.js / Frontend ---
 node_modules/
-dist/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
 *.local
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Python
+# TypeScript
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# --- Python ---
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
 .venv/
+venv/
+ENV/
+env/
+.venv*/
+*.egg-info/
+dist/
+build/
+*.egg
 .pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
 
-# Java / Gradle
+# --- Java / Gradle ---
 .gradle/
 build/
 out/
 *.class
+*.jar
+*.war
+*.ear
+*.iml
+*.ipr
+*.iws
 
-# IDE
+# --- IDE / Редакторы ---
 .idea/
 .vscode/
-*.iml
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- Логи и временные файлы ---
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# --- Базы данных ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Сгенерированные файлы ---
+*.docx
+*.pdf
+!ГОСТ\ 7.32-2017.pdf
+
+# --- Секреты и ключи ---
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+id_ecdsa
+.ssh/
+
+# --- Системные файлы ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
