@@ -57,6 +57,7 @@ export const documentsApi = {
       method: 'PUT',
       body: JSON.stringify({ name, content, settings }),
     }),
+  remove: (id: string) => api<void>(`/api/documents/${id}`, { method: 'DELETE' }),
 }
 
 export const convertApi = {
@@ -65,6 +66,18 @@ export const convertApi = {
       method: 'POST',
       body: JSON.stringify({ markdown, docName, settings, assets }),
     }),
+  // Тот же DOCX, дорендеренный сервером в PDF (LibreOffice, с заполненным содержанием).
+  pdf: (markdown: string, docName: string, settings: Settings, assets: Record<string, string>) =>
+    apiBlob('/api/convert/pdf', {
+      method: 'POST',
+      body: JSON.stringify({ markdown, docName, settings, assets }),
+    }),
+  // Первая страница пользовательского титульника (PDF/DOCX) → PNG data-URL.
+  titleImage: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api<{ image: string }>('/api/convert/title-image', { method: 'POST', body: form })
+  },
 }
 
 export type AiQuality = 'fast' | 'balanced' | 'quality'
@@ -89,6 +102,8 @@ export interface AiJob {
   stage: string
   progress: number
   markdown: string | null
+  /** Готовые на данный момент разделы (растёт по мере генерации). */
+  partial?: string | null
   assets?: Record<string, string>
   error: string | null
 }
@@ -116,7 +131,20 @@ export const aiApi = {
       method: 'POST',
       body: JSON.stringify({ instruction, markdown }),
     }),
+  // Правка одного раздела: дешевле и не трогает остальной текст.
+  editSection: (instruction: string, sectionTitle: string, markdown: string) =>
+    api<{ jobId: string }>('/api/ai/edit-section', {
+      method: 'POST',
+      body: JSON.stringify({ instruction, section_title: sectionTitle, markdown }),
+    }),
   job: (id: string) => api<AiJob>(`/api/ai/jobs/${id}`),
   cancel: (id: string) => api<{ status: string }>(`/api/ai/jobs/${id}/cancel`, { method: 'POST' }),
   pricing: () => api<AiPricing>('/api/ai/pricing'),
+  // Нормоконтроль: проверка оформления без LLM (работает без AI_API_KEY);
+  // check_urls дополнительно проверяет доступность ссылок из списка источников.
+  lint: (markdown: string) =>
+    api<{ issues: string[] }>('/api/ai/lint', {
+      method: 'POST',
+      body: JSON.stringify({ markdown, check_urls: true }),
+    }),
 }

@@ -1,23 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { aiApi, AiJob, convertApi, documentsApi } from '../api'
+import { aiApi, AiJob, convertApi, DocumentDto, documentsApi } from '../api'
 import { useAuth } from '../auth/AuthContext'
-import { AiModal } from '../components/AiModal'
+import { AiJobKind, AiModal } from '../components/AiModal'
+import { DiffModal } from '../components/DiffModal'
+import { DocsModal } from '../components/DocsModal'
 import { EditorPane } from '../components/EditorPane'
 import { Header } from '../components/Header'
+import { LintModal } from '../components/LintModal'
 import { PreviewPane } from '../components/PreviewPane'
+import { CollapseLeftIcon, CollapseRightIcon } from '../components/icons'
+import { IconButton } from '../components/ui'
 import { SettingsModal } from '../components/SettingsModal'
 import { StatusBar } from '../components/StatusBar'
 import { Toast } from '../components/Toast'
 import { UserModal } from '../components/UserModal'
-import { addImageAsset, importAssets, pruneAssets, referencedAssets } from '../lib/assets'
+import { addImageAsset, getAsset, importAssets, pruneAssets, referencedAssets } from '../lib/assets'
 import { getMermaidSvg, mermaidToPng } from '../lib/mermaidRenderer'
 import { parseMD } from '../lib/markdown'
 import { Page, paginate } from '../lib/paginate'
-import { EDITOR_ONLY_KEYS, Settings } from '../lib/settings'
-import { loadPersisted, savePersisted } from '../lib/storage'
-import { applyTheme } from '../lib/theme'
+import { EDITOR_ONLY_KEYS, migrateSettings, Settings } from '../lib/settings'
+import { loadAiSnapshot, loadPersisted, saveAiSnapshot, savePersisted } from '../lib/storage'
+import { applyTheme, effectiveTheme, onSystemThemeChange } from '../lib/theme'
 
 const PAGE_WIDTH_PX = 794
 
@@ -43,6 +48,27 @@ function pickFiles(accept: string, multiple: boolean): Promise<File[]> {
   })
 }
 
+/** Имена файлов в zip без флага UTF-8 fflate декодирует как latin1 — кириллица
+ *  превращается в «мусор» (ÐÑ…). Если строка состоит только из байтов 0–255 и
+ *  содержит верхние байты, перекодируем её обратно в UTF-8. */
+function fixZipName(s: string): string {
+  if (/[-ÿ]/.test(s) && ![...s].some((c) => c.charCodeAt(0) > 255)) {
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(
+        Uint8Array.from([...s], (c) => c.charCodeAt(0)),
+      )
+    } catch {
+      /* не валидный UTF-8 — оставляем как есть */
+    }
+  }
+  return s
+}
+
+/** Служебные записи архивов macOS (AppleDouble), которые не нужно обрабатывать. */
+function isMacJunk(name: string): boolean {
+  return name.includes('__MACOSX/') || (name.split('/').pop() || '').startsWith('._')
+}
+
 export function EditorPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -52,15 +78,29 @@ export function EditorPage() {
   const [docName, setDocName] = useState(persisted.current.docName)
   const [settings, setSettings] = useState<Settings>(persisted.current.s)
   const [split, setSplit] = useState(0.46)
+  const [collapsed, setCollapsed] = useState<'none' | 'editor' | 'preview'>('none')
   const [zoom, setZoom] = useState<number | null>(null)
   const [pages, setPages] = useState<Page[]>([])
   const [saved, setSaved] = useState(true)
-  const [downloading, setDownloading] = useState(false)
+  const [downloading, setDownloading] = useState<false | 'docx' | 'pdf'>(false)
   const [settingsSection, setSettingsSection] = useState<'doc' | 'ed' | null>(null)
   const [userOpen, setUserOpen] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiJob, setAiJob] = useState<AiJob | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [docsOpen, setDocsOpen] = useState(false)
+  const [lintBusy, setLintBusy] = useState(false)
+  // Последний результат нормоконтроля (бейдж в статус-баре) и открыт ли список.
+  const [lintResult, setLintResult] = useState<string[] | null>(null)
+  const [lintOpen, setLintOpen] = useState(false)
+  // Текст до применения результата ИИ — кнопка «Откатить» в статус-баре.
+  const [aiSnapshot, setAiSnapshot] = useState<string | null>(() => loadAiSnapshot())
+  // Готовая ИИ-правка, ожидающая решения пользователя в diff-просмотре.
+  const [pendingAi, setPendingAi] = useState<{
+    oldMd: string
+    markdown: string
+    assets?: Record<string, string>
+  } | null>(null)
 
   const taRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
@@ -70,12 +110,25 @@ export function EditorPage() {
   const remoteTimer = useRef<number | null>(null)
   const toastTimer = useRef<number | null>(null)
   const docIdRef = useRef<string | null>(null)
+  // Пользователь уже редактировал документ/настройки или запустил генерацию —
+  // запоздавшая загрузка из облака не должна затирать его правки.
+  const userTouched = useRef(false)
 
   // Актуальные значения для отложенных колбэков.
   const stateRef = useRef({ md, docName, settings })
   stateRef.current = { md, docName, settings }
 
   useEffect(() => applyTheme(settings.theme), [settings.theme])
+
+  // При «системной» теме следим за переключением темы в ОС.
+  const [, bumpTheme] = useState(0)
+  useEffect(() => {
+    if (settings.theme !== 'auto') return
+    return onSystemThemeChange(() => {
+      applyTheme('auto')
+      bumpTheme((x) => x + 1)
+    })
+  }, [settings.theme])
 
   const showToast = useCallback((msg: string) => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current)
@@ -108,7 +161,8 @@ export function EditorPage() {
   const persistNow = useCallback(() => {
     const { md: m, docName: n, settings: s } = stateRef.current
     savePersisted({ md: m, docName: n, s })
-    pruneAssets(m)
+    // Логотип и свой титульник живут вне markdown — уборка их не трогает.
+    pruneAssets(m, [s.titleLogo, s.titleCustom])
     setSaved(true)
   }, [])
 
@@ -143,10 +197,13 @@ export function EditorPage() {
           const doc = await documentsApi.get(list[0].id)
           if (cancelled) return
           docIdRef.current = doc.id
+          // Если пользователь уже начал работать (правки/генерация), не затираем
+          // его локальное состояние — сохранение позже зальёт его в этот же doc.
+          if (userTouched.current) return
           setDocName(doc.name)
           setMd(doc.content)
           try {
-            setSettings((prev) => ({ ...prev, ...JSON.parse(doc.settings) }))
+            setSettings((prev) => ({ ...prev, ...migrateSettings(JSON.parse(doc.settings)) }))
           } catch {
             /* settings повреждены — оставляем локальные */
           }
@@ -185,10 +242,16 @@ export function EditorPage() {
     return () => window.removeEventListener('resize', onResize)
   }, [doPaginate, fitZoom])
 
+  // Сворачивание/разворачивание панелей меняет ширину превью — подгоняем масштаб.
+  useEffect(() => {
+    if (!userZoomed.current) requestAnimationFrame(fitZoom)
+  }, [collapsed, fitZoom])
+
   /* ---------- обработчики ---------- */
 
   const onMdChange = useCallback(
     (v: string) => {
+      userTouched.current = true
       setMd(v)
       schedulePaginate()
       scheduleSave()
@@ -198,6 +261,7 @@ export function EditorPage() {
 
   const onSettingChange = useCallback(
     <K extends keyof Settings>(key: K, value: Settings[K]) => {
+      userTouched.current = true
       setSettings((prev) => ({ ...prev, [key]: value }))
       scheduleSave()
       if (!EDITOR_ONLY_KEYS.includes(key)) schedulePaginate()
@@ -253,7 +317,8 @@ export function EditorPage() {
   }, [aiActive])
 
   const trackAiJob = useCallback(
-    (jobId: string, successMsg: string) => {
+    (jobId: string, successMsg: string, kind: AiJobKind) => {
+      userTouched.current = true
       stopAiPolling()
       aiJobIdRef.current = jobId
       setAiJob({ id: jobId, status: 'queued', stage: 'В очереди', progress: 0, markdown: null, error: null })
@@ -265,15 +330,35 @@ export function EditorPage() {
             stopAiPolling()
             aiJobIdRef.current = null
             if (j.status === 'done' && j.markdown) {
-              // Сначала кладём сгенерированные графики в хранилище, потом текст,
-              // чтобы превью сразу нашло картинки по ссылкам asset:fig-N.
-              importAssets(j.assets)
-              onMdChange(j.markdown)
-              showToast(successMsg)
-              setAiJob(null)
-              setAiOpen(false)
+              if (kind === 'edit') {
+                // Правка не применяется сразу: пользователь смотрит diff и
+                // решает — принять или отклонить.
+                setPendingAi({ oldMd: stateRef.current.md, markdown: j.markdown, assets: j.assets })
+                setAiJob(null)
+                setAiOpen(false)
+              } else {
+                // Генерация с нуля заменяет документ сразу; снапшот позволяет
+                // откатиться кнопкой в статус-баре.
+                saveAiSnapshot(stateRef.current.md)
+                setAiSnapshot(stateRef.current.md)
+                // Сначала кладём сгенерированные графики в хранилище, потом
+                // текст, чтобы превью сразу нашло картинки asset:fig-N.
+                importAssets(j.assets)
+                onMdChange(j.markdown)
+                showToast(successMsg)
+                setAiJob(null)
+                setAiOpen(false)
+              }
             } else if (j.status === 'cancelled') {
-              showToast('Задача ИИ остановлена')
+              if (kind === 'generate' && j.partial?.trim()) {
+                // Уже написанные разделы не пропадают: пользователь видит их в
+                // diff-просмотре и решает, забирать ли в редактор.
+                setPendingAi({ oldMd: stateRef.current.md, markdown: j.partial })
+                showToast('Генерация остановлена — можно принять уже написанные разделы')
+                setAiOpen(false)
+              } else {
+                showToast('Задача ИИ остановлена')
+              }
               setAiJob(null)
             } else if (j.status === 'error') {
               showToast('Ошибка ИИ: ' + (j.error ?? 'неизвестная'))
@@ -286,6 +371,21 @@ export function EditorPage() {
     },
     [onMdChange, showToast, stopAiPolling],
   )
+
+  const applyPendingAi = useCallback(() => {
+    if (!pendingAi) return
+    saveAiSnapshot(pendingAi.oldMd)
+    setAiSnapshot(pendingAi.oldMd)
+    importAssets(pendingAi.assets)
+    onMdChange(pendingAi.markdown)
+    setPendingAi(null)
+    showToast('Правка применена — откат доступен в статус-баре')
+  }, [pendingAi, onMdChange, showToast])
+
+  const rejectPendingAi = useCallback(() => {
+    setPendingAi(null)
+    showToast('Правка отклонена — текст не изменён')
+  }, [showToast])
 
   const cancelAi = useCallback(async () => {
     const id = aiJobIdRef.current
@@ -310,8 +410,114 @@ export function EditorPage() {
     [insertSnippet, showToast],
   )
 
+  // Локальные ссылки на картинки (не http/data/asset/placeholder).
+  const isResolvable = (s: string) => /^(https?:\/\/|data:|asset:|placeholder)/i.test(s)
+  const findLocalRefs = (text: string) =>
+    [
+      ...new Set(
+        [...text.matchAll(/!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)/g)]
+          .map((m) => m[1])
+          .filter((s) => !isResolvable(s)),
+      ),
+    ]
+
+  // Применяет загруженный документ: переписывает локальные ссылки на asset-ключи
+  // из keyBySrc, грузит текст и кладёт картинки в хранилище.
+  const applyLoadedDoc = useCallback(
+    (text: string, name: string, keyBySrc: Map<string, string>, localCount: number) => {
+      let linked = 0
+      const out = text.replace(/(!\[[^\]]*\]\(\s*)([^)\s]+)([^)]*\))/g, (full, pre, src, post) => {
+        if (isResolvable(src)) return full
+        const key = keyBySrc.get(src)
+        if (key) {
+          linked++
+          return pre + key + post
+        }
+        return full
+      })
+      setDocName(name)
+      onMdChange(out)
+      const left = localCount - linked
+      if (localCount === 0) showToast('Документ загружен')
+      else showToast(`Документ загружен · картинок подставлено: ${linked}, заглушек: ${left}`)
+    },
+    [onMdChange, showToast],
+  )
+
+  const uploadArchive = useCallback(
+    async (file: File) => {
+      let entries: Record<string, Uint8Array>
+      try {
+        const { unzipSync } = await import('fflate')
+        entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
+      } catch {
+        showToast('Не удалось распаковать архив')
+        return
+      }
+      // Чиним кириллицу в именах (latin1→UTF-8) и отсеиваем служебные файлы
+      // macOS. Храним соответствие исправленного имени → оригинального ключа
+      // (по нему читаем байты из entries).
+      const files = Object.keys(entries)
+        .filter((n) => !n.endsWith('/') && !isMacJunk(fixZipName(n)))
+        .map((orig) => ({ orig, name: fixZipName(orig) }))
+      // markdown-файл: корневой/самый короткий путь.
+      const mdFile = files
+        .filter((f) => /\.(md|markdown|txt)$/i.test(f.name))
+        .sort((a, b) => a.name.split('/').length - b.name.split('/').length || a.name.length - b.name.length)[0]
+      if (!mdFile) {
+        showToast('В архиве нет .md файла')
+        return
+      }
+      if (stateRef.current.md.trim() && !window.confirm('Заменить текущий документ содержимым архива?')) {
+        return
+      }
+      const text = new TextDecoder().decode(entries[mdFile.orig])
+      const name = (mdFile.name.split('/').pop() || 'Курсовая работа').replace(/\.(md|markdown|txt)$/i, '')
+      const localRefs = findLocalRefs(text)
+
+      // Картинки архива по нормализованному пути и по имени файла. Нормализуем
+      // Unicode в NFC: macOS хранит имена в NFD, а текст обычно в NFC.
+      const norm = (p: string) => p.replace(/^\.?\//, '').toLowerCase().normalize('NFC')
+      const baseOf = (p: string) => (p.split(/[\\/]/).pop() || '').toLowerCase().normalize('NFC')
+      const imgByPath = new Map<string, string>()
+      const imgByBase = new Map<string, string>()
+      for (const f of files) {
+        if (/\.(png|jpe?g|gif|webp)$/i.test(f.name)) {
+          imgByPath.set(norm(f.name), f.orig)
+          imgByBase.set(baseOf(f.name), f.orig)
+        }
+      }
+      const mime = (n: string) =>
+        /\.png$/i.test(n) ? 'image/png' : /\.gif$/i.test(n) ? 'image/gif' : /\.webp$/i.test(n) ? 'image/webp' : 'image/jpeg'
+
+      const keyBySrc = new Map<string, string>()
+      const keyByEntry = new Map<string, string>()
+      for (const src of localRefs) {
+        const entry = imgByPath.get(norm(src)) ?? imgByBase.get(baseOf(src))
+        if (!entry) continue
+        try {
+          if (!keyByEntry.has(entry)) {
+            const f = new File([entries[entry] as BlobPart], baseOf(fixZipName(entry)) || 'image', {
+              type: mime(entry),
+            })
+            keyByEntry.set(entry, await addImageAsset(f))
+          }
+          keyBySrc.set(src, keyByEntry.get(entry)!)
+        } catch {
+          /* пропускаем нечитаемую картинку */
+        }
+      }
+      applyLoadedDoc(text, name, keyBySrc, localRefs.length)
+    },
+    [applyLoadedDoc, showToast],
+  )
+
   const uploadMd = useCallback(
     async (file: File) => {
+      if (/\.zip$/i.test(file.name) || file.type === 'application/zip') {
+        await uploadArchive(file)
+        return
+      }
       let text = ''
       try {
         text = await file.text()
@@ -323,18 +529,14 @@ export function EditorPage() {
         return
       }
       const name = file.name.replace(/\.(md|markdown|txt)$/i, '') || 'Курсовая работа'
+      const localRefs = findLocalRefs(text)
 
-      // Картинки в загруженном .md: http(s)/data/asset работают как есть;
-      // ссылки на локальные файлы у нас отсутствуют — предлагаем приложить их.
-      const refs = [...text.matchAll(/!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)/g)].map((m) => m[1])
-      const isResolvable = (s: string) => /^(https?:\/\/|data:|asset:|placeholder)/i.test(s)
-      const localRefs = [...new Set(refs.filter((s) => !isResolvable(s)))]
-
-      let linked = 0
+      // Для одиночного .md картинок нет — предлагаем приложить их с устройства.
+      const keyBySrc = new Map<string, string>()
       if (localRefs.length > 0) {
         const attach = window.confirm(
           `В файле ${localRefs.length} изображений со ссылками на локальные файлы.\n` +
-            'Приложить их с устройства? (без этого они станут заглушками «Место для изображения»)',
+            'Приложить их с устройства? (или загрузите архив .zip с картинками внутри)',
         )
         if (attach) {
           const files = await pickFiles('image/*', true)
@@ -351,27 +553,14 @@ export function EditorPage() {
                 /* пропускаем нечитаемый файл */
               }
             }
-          }
-          text = text.replace(/(!\[[^\]]*\]\(\s*)([^)\s]+)([^)]*\))/g, (full, pre, src, post) => {
-            if (isResolvable(src)) return full
-            const base = src.split(/[\\/]/).pop()?.toLowerCase() ?? ''
             const key = keyByBase.get(base)
-            if (key) {
-              linked++
-              return pre + key + post
-            }
-            return full
-          })
+            if (key) keyBySrc.set(src, key)
+          }
         }
       }
-
-      setDocName(name)
-      onMdChange(text)
-      const left = localRefs.length - linked
-      if (localRefs.length === 0) showToast('Документ загружен')
-      else showToast(`Документ загружен · картинок подставлено: ${linked}, заглушек: ${left}`)
+      applyLoadedDoc(text, name, keyBySrc, localRefs.length)
     },
-    [onMdChange, showToast],
+    [applyLoadedDoc, uploadArchive, showToast],
   )
 
   const manualSave = useCallback(() => {
@@ -387,35 +576,199 @@ export function EditorPage() {
     return false
   }, [user, navigate, showToast])
 
-  const download = useCallback(async () => {
-    if (downloading || !requireAuth()) return
-    setDownloading(true)
+  /* ---------- откат ИИ-правки ---------- */
+
+  // Меняет местами текущий текст и снапшот: повторное нажатие возвращает
+  // ИИ-версию, так что случайный клик ничего не теряет.
+  const rollbackAi = useCallback(() => {
+    if (aiSnapshot === null) return
+    const current = stateRef.current.md
+    onMdChange(aiSnapshot)
+    saveAiSnapshot(current)
+    setAiSnapshot(current)
+    showToast('Текст заменён — повторное нажатие вернёт обратно')
+  }, [aiSnapshot, onMdChange, showToast])
+
+  /* ---------- нормоконтроль ---------- */
+
+  const runLint = useCallback(async () => {
+    if (lintBusy || !requireAuth()) return
+    setLintBusy(true)
     try {
-      const { md: m, docName: n, settings: s } = stateRef.current
-      const assets: Record<string, string> = referencedAssets(m)
-      const mermaidBlocks = parseMD(m).filter((b) => b.type === 'mermaid')
-      await Promise.all(
-        mermaidBlocks.map(async (b, i) => {
-          if (b.type !== 'mermaid') return
-          const png = await mermaidToPng(b.code)
-          if (png) assets[`mermaid-${i}`] = png
-        }),
-      )
-      const blob = await convertApi.docx(m, n || 'Курсовая работа', s, assets)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${n || 'Курсовая работа'}.docx`
-      a.click()
-      URL.revokeObjectURL(url)
-      showToast(`Файл «${n}.docx» скачан`)
+      const { issues } = await aiApi.lint(stateRef.current.md)
+      setLintResult(issues)
+      if (issues.length === 0) showToast('Нормоконтроль пройден — замечаний нет')
+      else setLintOpen(true)
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) requireAuth()
-      else showToast(e instanceof Error ? e.message : 'Не удалось сформировать DOCX')
+      showToast(e instanceof Error ? e.message : 'Не удалось выполнить проверку')
     } finally {
-      setDownloading(false)
+      setLintBusy(false)
     }
-  }, [downloading, requireAuth, showToast])
+  }, [lintBusy, requireAuth, showToast])
+
+  /* ---------- экспорт .zip (markdown + картинки) ---------- */
+
+  const exportZip = useCallback(async () => {
+    const { md: m, docName: n } = stateRef.current
+    const { zipSync, strToU8 } = await import('fflate')
+    const files: Record<string, Uint8Array> = {}
+    // Ассеты из localStorage кладём в архив файлами, а ссылки в копии markdown
+    // переписываем на относительные пути — такой .zip обратно импортируется
+    // кнопкой «Загрузить» без потери картинок.
+    let out = m
+    for (const [key, dataUrl] of Object.entries(referencedAssets(m))) {
+      const dm = /^data:image\/(png|jpe?g|gif|webp);base64,([\s\S]*)$/.exec(dataUrl)
+      if (!dm) continue
+      try {
+        const bin = atob(dm[2])
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const name = `images/${key.replace(/^asset:/, '')}.${dm[1] === 'jpeg' ? 'jpg' : dm[1]}`
+        files[name] = bytes
+        out = out.split(key).join(name)
+      } catch {
+        /* битый base64 — оставляем ссылку как есть */
+      }
+    }
+    const safeName = (n || 'Курсовая работа').replace(/[\\/:*?"<>|]+/g, '_')
+    files[`${safeName}.md`] = strToU8(out)
+    const blob = new Blob([zipSync(files, { level: 6 })], { type: 'application/zip' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${safeName}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+    showToast('Архив сохранён: markdown + картинки')
+  }, [showToast])
+
+  const exportMd = useCallback(() => {
+    const { md: m, docName: n } = stateRef.current
+    const safeName = (n || 'Курсовая работа').replace(/[\\/:*?"<>|]+/g, '_')
+    const blob = new Blob([m], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${safeName}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+    showToast('Файл .md сохранён (картинки не входят — для них есть архив .zip)')
+  }, [showToast])
+
+  /* ---------- несколько документов ---------- */
+
+  // Досылает несохранённый хвост правок текущего документа перед переключением.
+  const flushRemoteSave = useCallback(async () => {
+    if (remoteTimer.current) {
+      window.clearTimeout(remoteTimer.current)
+      remoteTimer.current = null
+    }
+    if (user && docIdRef.current) {
+      const { md: m, docName: n, settings: s } = stateRef.current
+      try {
+        await documentsApi.update(docIdRef.current, n || 'Курсовая работа', m, JSON.stringify(s))
+      } catch {
+        /* документ мог быть удалён — не блокируем переключение */
+      }
+    }
+  }, [user])
+
+  const openDoc = useCallback(
+    async (doc: DocumentDto) => {
+      await flushRemoteSave()
+      userTouched.current = true
+      docIdRef.current = doc.id
+      setDocName(doc.name)
+      setMd(doc.content)
+      try {
+        setSettings((prev) => ({ ...prev, ...migrateSettings(JSON.parse(doc.settings)) }))
+      } catch {
+        /* settings повреждены — оставляем текущие */
+      }
+      schedulePaginate()
+      scheduleSave()
+      showToast(`Открыт документ «${doc.name}»`)
+    },
+    [flushRemoteSave, schedulePaginate, scheduleSave, showToast],
+  )
+
+  const createDoc = useCallback(async () => {
+    await flushRemoteSave()
+    userTouched.current = true
+    try {
+      const { settings: s } = stateRef.current
+      const doc = await documentsApi.create('Новая работа', '', JSON.stringify(s))
+      docIdRef.current = doc.id
+      setDocName(doc.name)
+      setMd('')
+      schedulePaginate()
+      scheduleSave()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось создать документ')
+    }
+  }, [flushRemoteSave, schedulePaginate, scheduleSave, showToast])
+
+  const onDocDeleted = useCallback(
+    (id: string) => {
+      if (docIdRef.current !== id) return
+      // Удалили открытый документ: текст остаётся локально, а облачная копия
+      // пересоздаётся, чтобы автосохранение продолжило работать.
+      docIdRef.current = null
+      const { md: m, docName: n, settings: s } = stateRef.current
+      documentsApi
+        .create(n || 'Курсовая работа', m, JSON.stringify(s))
+        .then((doc) => {
+          docIdRef.current = doc.id
+        })
+        .catch(() => {})
+    },
+    [],
+  )
+
+  const download = useCallback(
+    async (format: 'docx' | 'pdf') => {
+      if (downloading || !requireAuth()) return
+      setDownloading(format)
+      try {
+        const { md: m, docName: n, settings: s } = stateRef.current
+        const assets: Record<string, string> = referencedAssets(m)
+        // Логотип и свой титульник — ассеты вне markdown, конвертеру нужны явно.
+        for (const key of [s.titleLogo, s.titleCustom]) {
+          if (key?.startsWith('asset:')) {
+            const value = getAsset(key)
+            if (value) assets[key] = value
+          }
+        }
+        const mermaidBlocks = parseMD(m).filter((b) => b.type === 'mermaid')
+        await Promise.all(
+          mermaidBlocks.map(async (b, i) => {
+            if (b.type !== 'mermaid') return
+            const png = await mermaidToPng(b.code)
+            if (png) assets[`mermaid-${i}`] = png
+          }),
+        )
+        // Серверная конвертация (Pandoc-формулы; PDF дорендеривает LibreOffice).
+        const name = n || 'Курсовая работа'
+        const blob =
+          format === 'pdf'
+            ? await convertApi.pdf(m, name, s, assets)
+            : await convertApi.docx(m, name, s, assets)
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${name}.${format}`
+        a.click()
+        URL.revokeObjectURL(url)
+        showToast(`Файл «${name}.${format}» скачан`)
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) requireAuth()
+        else showToast(e instanceof Error ? e.message : 'Не удалось сформировать файл')
+      } finally {
+        setDownloading(false)
+      }
+    },
+    [downloading, requireAuth, showToast],
+  )
 
   const splitDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -445,18 +798,24 @@ export function EditorPage() {
       <Header
         docName={docName}
         onDocName={(v) => {
+          userTouched.current = true
           setDocName(v)
           scheduleSave()
         }}
         downloading={downloading}
         onDownload={download}
+        onExportZip={exportZip}
+        onExportMd={exportMd}
         onOpenAi={() => {
           if (requireAuth()) setAiOpen(true)
         }}
+        onOpenDocs={() => {
+          if (requireAuth()) setDocsOpen(true)
+        }}
         aiJob={aiActive ? aiJob : null}
-        theme={settings.theme}
+        theme={effectiveTheme(settings.theme)}
         onToggleTheme={() =>
-          onSettingChange('theme', settings.theme === 'dark' ? 'light' : 'dark')
+          onSettingChange('theme', effectiveTheme(settings.theme) === 'dark' ? 'light' : 'dark')
         }
         onOpenUser={() => {
           if (user) setUserOpen(true)
@@ -466,45 +825,76 @@ export function EditorPage() {
       />
 
       <div className="flex min-h-0 flex-1">
-        <EditorPane
-          md={md}
-          settings={settings}
-          width={(split * 100).toFixed(1) + '%'}
-          taRef={taRef}
-          onChange={onMdChange}
-          onSave={manualSave}
-          onInsert={insertSnippet}
-          onInsertImage={insertImage}
-          onUploadMd={uploadMd}
-          onOpenSettings={() => setSettingsSection('ed')}
-        />
-        <div
-          onMouseDown={splitDown}
-          title="Перетащите, чтобы изменить размер"
-          className="z-10 flex flex-shrink-0 cursor-col-resize items-center justify-center bg-transparent"
-          style={{ width: 9, margin: '0 -4px' }}
-        />
-        <PreviewPane
-          pages={pages}
-          zoom={zoomValue}
-          previewRef={previewRef}
-          onZoomIn={() => {
-            userZoomed.current = true
-            setZoom(Math.min(2, Math.round(zoomValue * 10 + 1) / 10))
-          }}
-          onZoomOut={() => {
-            userZoomed.current = true
-            setZoom(Math.max(0.3, Math.round(zoomValue * 10 - 1) / 10))
-          }}
-          onZoomFit={() => {
-            userZoomed.current = false
-            fitZoom()
-          }}
-          onOpenSettings={() => setSettingsSection('doc')}
-        />
+        {collapsed === 'editor' ? (
+          <div className="flex w-[40px] flex-shrink-0 flex-col items-center border-r border-line bg-surface pt-2">
+            <IconButton title="Развернуть редактор" onClick={() => setCollapsed('none')}>
+              <CollapseRightIcon />
+            </IconButton>
+          </div>
+        ) : (
+          <EditorPane
+            md={md}
+            settings={settings}
+            width={collapsed === 'preview' ? '100%' : (split * 100).toFixed(1) + '%'}
+            taRef={taRef}
+            onChange={onMdChange}
+            onSave={manualSave}
+            onInsert={insertSnippet}
+            onInsertImage={insertImage}
+            onUploadMd={uploadMd}
+            onToast={showToast}
+            onOpenSettings={() => setSettingsSection('ed')}
+            onCollapse={() => setCollapsed('editor')}
+          />
+        )}
+        {collapsed === 'none' && (
+          <div
+            onMouseDown={splitDown}
+            title="Перетащите, чтобы изменить размер"
+            className="z-10 flex flex-shrink-0 cursor-col-resize items-center justify-center bg-transparent"
+            style={{ width: 9, margin: '0 -4px' }}
+          />
+        )}
+        {collapsed === 'preview' ? (
+          <div className="flex w-[40px] flex-shrink-0 flex-col items-center border-l border-line pt-2" style={{ background: 'var(--preview-bar)' }}>
+            <IconButton title="Развернуть превью" onClick={() => setCollapsed('none')} hoverBg="var(--hover-2)">
+              <CollapseLeftIcon />
+            </IconButton>
+          </div>
+        ) : (
+          <PreviewPane
+            pages={pages}
+            zoom={zoomValue}
+            previewRef={previewRef}
+            onZoomIn={() => {
+              userZoomed.current = true
+              setZoom(Math.min(2, Math.round(zoomValue * 10 + 1) / 10))
+            }}
+            onZoomOut={() => {
+              userZoomed.current = true
+              setZoom(Math.max(0.3, Math.round(zoomValue * 10 - 1) / 10))
+            }}
+            onZoomFit={() => {
+              userZoomed.current = false
+              fitZoom()
+            }}
+            onOpenSettings={() => setSettingsSection('doc')}
+            onCollapse={() => setCollapsed('preview')}
+          />
+        )}
       </div>
 
-      <StatusBar saved={saved} wordCount={wordCount} pageCount={pages.length} />
+      <StatusBar
+        saved={saved}
+        wordCount={wordCount}
+        pageCount={pages.length}
+        pageTarget={settings.targetPages || 0}
+        lintBusy={lintBusy}
+        lintCount={lintResult === null ? null : lintResult.length}
+        onLint={runLint}
+        canRollback={aiSnapshot !== null}
+        onRollback={rollbackAi}
+      />
 
       {settingsSection && (
         <SettingsModal
@@ -515,6 +905,27 @@ export function EditorPage() {
         />
       )}
       {userOpen && <UserModal onClose={() => setUserOpen(false)} onToast={showToast} />}
+      {docsOpen && (
+        <DocsModal
+          currentId={docIdRef.current}
+          onOpen={openDoc}
+          onCreate={createDoc}
+          onDeleted={onDocDeleted}
+          onClose={() => setDocsOpen(false)}
+          onToast={showToast}
+        />
+      )}
+      {lintOpen && lintResult && (
+        <LintModal issues={lintResult} onClose={() => setLintOpen(false)} />
+      )}
+      {pendingAi && (
+        <DiffModal
+          oldText={pendingAi.oldMd}
+          newText={pendingAi.markdown}
+          onApply={applyPendingAi}
+          onReject={rejectPendingAi}
+        />
+      )}
       {aiOpen && (
         <AiModal
           defaultTopic={settings.topic}

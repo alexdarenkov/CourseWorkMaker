@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, Settings } from './settings'
+import { DEFAULT_SETTINGS, migrateSettings, Settings } from './settings'
 import { SAMPLE_MD } from './sample'
 
 const KEY = 'md2docx:v1'
@@ -16,7 +16,7 @@ export function loadPersisted(): PersistedState {
       return {
         md: typeof raw.md === 'string' ? raw.md : SAMPLE_MD,
         docName: raw.docName || 'Курсовая работа',
-        s: { ...DEFAULT_SETTINGS, ...(raw.s || {}) },
+        s: { ...DEFAULT_SETTINGS, ...migrateSettings(raw.s || {}) },
       }
     }
   } catch {
@@ -28,6 +28,22 @@ export function loadPersisted(): PersistedState {
 export function savePersisted(state: PersistedState): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(state))
+  } catch {
+    /* квота/приватный режим */
+  }
+}
+
+// Текст документа до применения результата ИИ — для кнопки «Откатить».
+const AI_SNAPSHOT_KEY = 'md2docx:ai-snapshot:v1'
+
+export function loadAiSnapshot(): string | null {
+  return localStorage.getItem(AI_SNAPSHOT_KEY)
+}
+
+export function saveAiSnapshot(md: string | null): void {
+  try {
+    if (md === null) localStorage.removeItem(AI_SNAPSHOT_KEY)
+    else localStorage.setItem(AI_SNAPSHOT_KEY, md)
   } catch {
     /* квота/приватный режим */
   }

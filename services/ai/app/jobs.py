@@ -18,6 +18,9 @@ class Job:
     stage: str = "В очереди"
     progress: float = 0.0
     markdown: str | None = None
+    # Частичный документ по мере генерации (уже готовые разделы) — фронт
+    # показывает его в предпросмотре; при отмене его можно забрать в редактор.
+    partial: str | None = None
     assets: dict[str, str] = field(default_factory=dict)
     error: str | None = None
     created_at: float = field(default_factory=time.time)

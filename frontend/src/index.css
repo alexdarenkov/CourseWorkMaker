@@ -4,6 +4,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* KaTeX по умолчанию рисует формулы крупнее текста (1.21em). В превью «как в
+   Word» формула должна совпадать по размеру с текстом (в DOCX OMML наследует
+   14pt окружения), поэтому приводим к 1em. */
+.katex {
+  font-size: 1em;
+}
+
+/* Выключная формула KaTeX по умолчанию добавляет по 1em сверху и снизу —
+   из-за этого формула «раздувается» по высоте. Убираем лишнее. */
+.katex-display {
+  margin: 0.2em 0;
+}
+
 /* Палитра приложения. А4-страницы превью НЕ используют эти переменные
    и всегда остаются белыми (как итоговый DOCX). */
 :root {
@@ -95,6 +108,21 @@ body,
 textarea:focus,
 input:focus {
   outline: none;
+}
+
+/* Клавиатурная навигация: видимое кольцо фокуса только от Tab (не от клика). */
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid #d97757;
+  outline-offset: 1px;
+}
+
+/* Лёгкий отклик нажатия на всех кнопках. */
+button {
+  transition: transform 0.08s ease;
+}
+button:active {
+  transform: scale(0.96);
 }
 
 ::selection {

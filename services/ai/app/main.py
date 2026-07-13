@@ -5,12 +5,19 @@ import time
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from . import config
-from .agent import CourseworkAgent, EditOptions, GenerationOptions
+from .agent import (
+    CourseworkAgent,
+    EditOptions,
+    GenerationOptions,
+    SectionEditOptions,
+    lint_user_document,
+)
 from .files import build_context
 from .jobs import Job, store
+from .sources import check_bibliography_urls
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -50,6 +57,27 @@ async def generate(
     job = store.create(x_user_id)
     job.task = asyncio.create_task(_run_job(job, opts, uploads))
     return {"jobId": job.id}
+
+
+class LintRequest(BaseModel):
+    markdown: str = Field(min_length=1, max_length=2_000_000)
+    # Дополнительно проверять доступность URL источников (сетевые запросы,
+    # занимает до ~6 секунд).
+    check_urls: bool = False
+
+
+@app.post("/lint")
+async def lint(req: LintRequest) -> dict:
+    """Нормоконтроль текущего документа. Проверка правил — без LLM (работает
+    и без AI_API_KEY); опционально проверяются ссылки списка источников."""
+    issues = lint_user_document(req.markdown)
+    if req.check_urls:
+        try:
+            issues += await check_bibliography_urls(req.markdown)
+        except Exception:
+            log.exception("URL check failed")
+            issues.append("Не удалось проверить ссылки источников — попробуйте позже")
+    return {"issues": issues}
 
 
 _pricing_cache: dict = {"ts": 0.0, "data": None}
@@ -108,6 +136,21 @@ async def edit(opts: EditOptions, x_user_id: str = Header(default="anonymous")) 
     return {"jobId": job.id}
 
 
+@app.post("/edit-section")
+async def edit_section(
+    opts: SectionEditOptions, x_user_id: str = Header(default="anonymous")
+) -> dict:
+    """Правка одного раздела (дешевле и точечнее, чем /edit всего документа)."""
+    if not config.AI_API_KEY:
+        raise HTTPException(503, "ИИ-сервис не сконфигурирован: задайте AI_API_KEY")
+    if store.has_active(x_user_id):
+        raise HTTPException(429, "У вас уже выполняется задача — дождитесь завершения")
+
+    job = store.create(x_user_id)
+    job.task = asyncio.create_task(_run_section_job(job, opts))
+    return {"jobId": job.id}
+
+
 @app.get("/jobs/{job_id}")
 def job_status(job_id: str, x_user_id: str = Header(default="anonymous")) -> dict:
     job = store.get(job_id)
@@ -119,22 +162,37 @@ def job_status(job_id: str, x_user_id: str = Header(default="anonymous")) -> dic
         "stage": job.stage,
         "progress": round(job.progress, 3),
         "markdown": job.markdown,
+        "partial": job.partial,
         "assets": job.assets,
         "error": job.error,
     }
 
 
 async def _run_edit_job(job: Job, opts: EditOptions) -> None:
+    agent = CourseworkAgent("balanced")
+    await _run_agent_task(job, "Применение правок", lambda p: agent.edit(opts, p))
+
+
+async def _run_section_job(job: Job, opts: SectionEditOptions) -> None:
+    agent = CourseworkAgent("balanced")
+    await _run_agent_task(
+        job, "Правка раздела", lambda p: agent.edit_section(opts, p)
+    )
+
+
+async def _run_agent_task(job: Job, start_stage: str, task) -> None:
+    """Общий каркас job'а правки: прогресс, отмена, обработка ошибок."""
     job.status = "running"
-    job.stage = "Применение правок"
+    job.stage = start_stage
     try:
 
-        async def progress(stage: str, value: float) -> None:
+        async def progress(stage: str, value: float, partial: str | None = None) -> None:
             job.stage = stage
             job.progress = value
+            if partial is not None:
+                job.partial = partial
 
-        agent = CourseworkAgent("balanced")
-        job.markdown = await agent.edit(opts, progress)
+        job.markdown = await task(progress)
         job.status = "done"
         job.stage = "Готово"
         job.progress = 1.0
@@ -143,7 +201,7 @@ async def _run_edit_job(job: Job, opts: EditOptions) -> None:
         job.stage = "Остановлено"
         raise
     except Exception as e:
-        log.exception("Edit job %s failed", job.id)
+        log.exception("Job %s failed", job.id)
         job.status = "error"
         job.stage = "Ошибка"
         job.error = str(e)
@@ -161,9 +219,11 @@ async def _run_job(
         else:
             context = ""
 
-        async def progress(stage: str, value: float) -> None:
+        async def progress(stage: str, value: float, partial: str | None = None) -> None:
             job.stage = stage
             job.progress = value
+            if partial is not None:
+                job.partial = partial
 
         agent = CourseworkAgent(opts.quality)
         job.markdown = await agent.generate(opts, context, progress)

@@ -13,15 +13,18 @@ class GostSettings(CamelModel):
     bibliography: bool = True
     auto_number: bool = True
 
-    university: str = ""
-    department: str = ""
-    discipline: str = ""
+    # Титульный лист — свободные многострочные блоки (см. Settings фронтенда):
+    # шапка по центру, ключ логотипа в assets, тип работы, тема (полужирно в
+    # кавычках), исполнители («Метка: текст» → метка слева, текст справа),
+    # низ по центру.
+    title_header: str = ""
+    title_logo: str = ""
+    # Свой титульник: ключ ассета с картинкой страницы (заменяет блоки ниже).
+    title_custom: str = ""
+    title_work: str = ""
     topic: str = ""
-    group: str = ""
-    student: str = ""
-    supervisor: str = ""
-    city: str = ""
-    year: str = ""
+    title_people: str = ""
+    title_bottom: str = ""
 
 
 class ConvertRequest(CamelModel):

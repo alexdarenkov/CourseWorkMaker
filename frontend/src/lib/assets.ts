@@ -80,11 +80,12 @@ export function referencedAssets(md: string): Record<string, string> {
   return out
 }
 
-/** Удаляет из хранилища ассеты, на которые документ больше не ссылается. */
-export function pruneAssets(md: string): void {
+/** Удаляет из хранилища ассеты, на которые документ больше не ссылается.
+ *  keep — ключи, живущие вне markdown (например, логотип титульного листа). */
+export function pruneAssets(md: string, keep: string[] = []): void {
   let changed = false
   for (const key of Object.keys(assets)) {
-    if (!md.includes(key)) {
+    if (!md.includes(key) && !keep.includes(key)) {
       delete assets[key]
       changed = true
     }
@@ -92,13 +93,19 @@ export function pruneAssets(md: string): void {
   if (changed) persist()
 }
 
-/** Сохраняет картинку с устройства (с уменьшением до разумного размера). */
-export async function addImageAsset(file: File): Promise<string> {
-  const dataUrl = await downscale(file)
-  const key = `asset:img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+/** Кладёт готовый data-URL в хранилище (например, отрендеренный сервером
+ *  титульник) и возвращает ключ ассета. */
+export function addRawAsset(dataUrl: string, prefix = 'img'): string {
+  const key = `asset:${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
   assets[key] = dataUrl
   persist()
   return key
+}
+
+/** Сохраняет картинку с устройства (с уменьшением до разумного размера). */
+export async function addImageAsset(file: File): Promise<string> {
+  const dataUrl = await downscale(file)
+  return addRawAsset(dataUrl)
 }
 
 async function downscale(file: File): Promise<string> {

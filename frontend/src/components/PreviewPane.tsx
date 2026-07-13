@@ -1,6 +1,7 @@
 import { RefObject } from 'react'
+import { LINE_HEIGHT } from '../lib/gostRender'
 import type { Page } from '../lib/paginate'
-import { FitIcon, GearIcon, MinusIcon, PlusIcon } from './icons'
+import { CollapseRightIcon, FitIcon, GearIcon, MinusIcon, PlusIcon } from './icons'
 import { IconButton } from './ui'
 
 interface PreviewPaneProps {
@@ -11,6 +12,7 @@ interface PreviewPaneProps {
   onZoomOut: () => void
   onZoomFit: () => void
   onOpenSettings: () => void
+  onCollapse: () => void
 }
 
 const PW = 794
@@ -29,7 +31,9 @@ const pageStyle: React.CSSProperties = {
   padding: '20mm 15mm 20mm 30mm',
   fontFamily: "'Times New Roman',Times,serif",
   fontSize: '14pt',
-  lineHeight: 1.5,
+  // Калиброванная высота строки Word (полуторный интервал Times New Roman);
+  // обязана совпадать с HOST_CSS пагинатора — см. LINE_HEIGHT в gostRender.ts.
+  lineHeight: Number(LINE_HEIGHT),
   color: '#000',
 }
 
@@ -41,23 +45,19 @@ export function PreviewPane(props: PreviewPaneProps) {
       style={{ minWidth: 360, background: 'var(--preview-bg)' }}
     >
       <div
-        className="flex h-[42px] flex-shrink-0 items-center gap-1.5 overflow-hidden border-b pl-[18px] pr-2.5"
+        className="flex h-[38px] flex-shrink-0 items-center gap-1.5 overflow-hidden border-b pl-3.5 pr-2.5"
         style={{ borderColor: 'var(--line)', background: 'var(--preview-bar)', flexWrap: 'nowrap' }}
       >
-        <div className="flex flex-shrink-0 items-center gap-1.5">
-          <span className="whitespace-nowrap text-[11px] font-bold tracking-[.1em] text-muted">
-            ПРЕВЬЮ
-          </span>
-          <span
-            className="whitespace-nowrap rounded-[5px] px-1.5 py-px text-[10px] font-semibold tracking-wide"
-            style={{ background: 'var(--chip-bg)', color: 'var(--chip-text)' }}
-          >
-            DOCX
-          </span>
-          <span className="whitespace-nowrap text-[11px]" style={{ color: 'var(--faint)' }}>
-            A4 · Times 14 · 1,5
-          </span>
-        </div>
+        <span
+          title="Превью соответствует итоговому DOCX по ГОСТ 7.32—2017"
+          className="whitespace-nowrap rounded-[5px] px-1.5 py-px text-[10px] font-semibold tracking-wide"
+          style={{ background: 'var(--chip-bg)', color: 'var(--chip-text)' }}
+        >
+          DOCX · ГОСТ 7.32
+        </span>
+        <span className="whitespace-nowrap text-[11px]" style={{ color: 'var(--faint)' }}>
+          A4 · Times 14 · 1,5
+        </span>
         <div className="min-w-1 flex-1" />
         <IconButton title="Уменьшить" onClick={props.onZoomOut} hoverBg="var(--hover-2)" size={28}>
           <MinusIcon />
@@ -71,17 +71,15 @@ export function PreviewPane(props: PreviewPaneProps) {
         <IconButton title="Увеличить" onClick={props.onZoomIn} hoverBg="var(--hover-2)" size={28}>
           <PlusIcon />
         </IconButton>
-        <button
-          title="По ширине окна"
-          onClick={props.onZoomFit}
-          className="flex h-7 cursor-pointer items-center gap-1.5 rounded-lg border-none bg-transparent px-2.5 text-[11.5px] font-medium text-soft hover:bg-hover-2"
-        >
+        <IconButton title="По ширине окна" onClick={props.onZoomFit} hoverBg="var(--hover-2)" size={28}>
           <FitIcon />
-          По ширине
-        </button>
+        </IconButton>
         <div className="mx-1 h-4 w-px bg-line" />
         <IconButton title="Настройки документа (ГОСТ)" onClick={props.onOpenSettings} hoverBg="var(--hover-2)" size={28}>
           <GearIcon size={16} />
+        </IconButton>
+        <IconButton title="Свернуть превью" onClick={props.onCollapse} hoverBg="var(--hover-2)" size={28}>
+          <CollapseRightIcon />
         </IconButton>
       </div>
       <div ref={props.previewRef} className="flex-1 overflow-auto px-6 pb-[60px] pt-7">

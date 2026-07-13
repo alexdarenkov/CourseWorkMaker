@@ -83,6 +83,18 @@ export const CloseIcon = ({ size = 14, strokeWidth = 2.2 }: IconProps) => (
   </svg>
 )
 
+export const CollapseLeftIcon = ({ size = 16, strokeWidth = 1.9 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M15 6l-6 6 6 6M4 4v16" />
+  </svg>
+)
+
+export const CollapseRightIcon = ({ size = 16, strokeWidth = 1.9 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M9 6l6 6-6 6M20 4v16" />
+  </svg>
+)
+
 export const CheckIcon = ({ size = 12, strokeWidth = 2.4 }: IconProps) => (
   <svg {...svgProps(size, strokeWidth)}>
     <polyline points="20 6 9 17 4 12" />
@@ -115,6 +127,79 @@ export const UploadIcon = ({ size = 16, strokeWidth = 1.8 }: IconProps) => (
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
     <polyline points="7 9 12 4 17 9" />
     <line x1="12" y1="4" x2="12" y2="16" />
+  </svg>
+)
+
+export const ChevronDownIcon = ({ size = 14, strokeWidth = 2.2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+)
+
+export const HeadingIcon = ({ size = 15, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M6 4v16" />
+    <path d="M18 4v16" />
+    <path d="M6 12h12" />
+  </svg>
+)
+
+export const FileTextIcon = ({ size = 15, strokeWidth = 1.8 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+    <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+    <path d="M8 13h8" />
+    <path d="M8 17h5" />
+  </svg>
+)
+
+export const BoldIcon = ({ size = 15, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8" />
+  </svg>
+)
+
+export const ItalicIcon = ({ size = 15, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <line x1="19" y1="4" x2="10" y2="4" />
+    <line x1="14" y1="20" x2="5" y2="20" />
+    <line x1="15" y1="4" x2="9" y2="20" />
+  </svg>
+)
+
+export const FolderIcon = ({ size = 17, strokeWidth = 1.7 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  </svg>
+)
+
+export const ShieldCheckIcon = ({ size = 13, strokeWidth = 1.9 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+    <path d="m9 12 2 2 4-4" />
+  </svg>
+)
+
+export const UndoIcon = ({ size = 13, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M3 7v6h6" />
+    <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+  </svg>
+)
+
+export const ArchiveIcon = ({ size = 16, strokeWidth = 1.8 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <rect x="2" y="4" width="20" height="5" rx="1" />
+    <path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9" />
+    <path d="M10 13h4" />
+  </svg>
+)
+
+export const TrashIcon = ({ size = 15, strokeWidth = 1.8 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M3 6h18" />
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
   </svg>
 )
 

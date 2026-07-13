@@ -1,8 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { aiApi, AiJob, AiPricing, AiQuality, AiTierPricing } from '../api'
+import { renderAll } from '../lib/gostRender'
+import { parseMD } from '../lib/markdown'
 import type { Settings } from '../lib/settings'
 import { CloseIcon, SparklesIcon, Spinner } from './icons'
 import { SegButton, SettingRow, TextField, Toggle } from './ui'
+
+export type AiJobKind = 'generate' | 'edit'
 
 interface AiModalProps {
   defaultTopic: string
@@ -10,25 +14,26 @@ interface AiModalProps {
   settings: Settings
   onSettingChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void
   job: AiJob | null
-  onStarted: (jobId: string, successMsg: string) => void
+  onStarted: (jobId: string, successMsg: string, kind: AiJobKind) => void
   onCancel: () => void
   onClose: () => void
   onToast: (msg: string) => void
 }
 
-// Поля титульного листа (как в настройках превью); собираются автоматически,
-// к ИИ НЕ передаются.
-const TITLE_FIELDS: { key: keyof Settings; label: string }[] = [
-  { key: 'university', label: 'Учебное заведение' },
-  { key: 'department', label: 'Кафедра' },
-  { key: 'discipline', label: 'Дисциплина' },
-  { key: 'topic', label: 'Тема работы' },
-  { key: 'group', label: 'Группа' },
-  { key: 'student', label: 'Студент (ФИО)' },
-  { key: 'supervisor', label: 'Руководитель' },
-  { key: 'city', label: 'Город' },
-  { key: 'year', label: 'Год' },
-]
+/** Заголовки 1-го уровня документа (вне код-фенсов) — как их видит бэкенд. */
+function sectionTitles(md: string): string[] {
+  const out: string[] = []
+  let inCode = false
+  for (const line of md.split('\n')) {
+    if (line.trim().startsWith('```')) inCode = !inCode
+    const m = inCode ? null : line.match(/^#\s+(.+?)\s*$/)
+    if (m) out.push(m[1])
+  }
+  return out
+}
+
+// Титульный лист собирается автоматически из настроек документа и к ИИ
+// НЕ передаётся; здесь правится только тема на титуле.
 
 const TIERS: { id: AiQuality; label: string; hint: string }[] = [
   { id: 'fast', label: 'Быстро', hint: '~2–4 мин' },
@@ -67,6 +72,9 @@ export function AiModal({
 }: AiModalProps) {
   const [mode, setMode] = useState<'generate' | 'edit'>('generate')
   const [instruction, setInstruction] = useState('')
+  // '' — правится весь документ, иначе — заголовок выбранного раздела.
+  const [section, setSection] = useState('')
+  const sections = useMemo(() => sectionTitles(currentMd), [currentMd])
   const [topic, setTopic] = useState(defaultTopic)
   const [requirements, setRequirements] = useState('')
   const [pages, setPages] = useState(15)
@@ -93,6 +101,28 @@ export function AiModal({
     if (!running) setStopping(false)
   }, [running])
 
+  // Живой предпросмотр: готовые разделы рендерятся тем же ГОСТ-рендером, что и
+  // превью, но одной лентой без разбивки на страницы. mermaid/картинки на этом
+  // этапе ещё не построены — вместо них заглушки.
+  const partialHtml = useMemo(() => {
+    const p = job?.partial
+    if (!p || !running) return ''
+    try {
+      return renderAll(parseMD(p), settings, () => null)
+        .out.map((b) => b.html)
+        .join('')
+    } catch {
+      return ''
+    }
+  }, [job?.partial, running, settings])
+
+  // Автопрокрутка предпросмотра вниз — к только что дописанному разделу.
+  const previewRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = previewRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [partialHtml])
+
   const start = async () => {
     if (running) return
     if (mode === 'generate' && topic.trim().length < 3) {
@@ -112,8 +142,10 @@ export function AiModal({
     setStarting(true)
     try {
       if (mode === 'edit') {
-        const { jobId } = await aiApi.edit(instruction.trim(), currentMd)
-        onStarted(jobId, 'Правки применены — текст обновлён в редакторе')
+        const { jobId } = section
+          ? await aiApi.editSection(instruction.trim(), section, currentMd)
+          : await aiApi.edit(instruction.trim(), currentMd)
+        onStarted(jobId, 'Правка готова', 'edit')
       } else {
         const { jobId } = await aiApi.generate(
           {
@@ -131,7 +163,7 @@ export function AiModal({
           },
           files,
         )
-        onStarted(jobId, 'Курсовая сгенерирована — текст загружен в редактор')
+        onStarted(jobId, 'Курсовая сгенерирована — текст загружен в редактор', 'generate')
       }
     } catch (e) {
       onToast(e instanceof Error ? e.message : 'Не удалось запустить задачу')
@@ -190,8 +222,48 @@ export function AiModal({
           </SegButton>
         </div>
 
-        {mode === 'edit' ? (
+        {running && partialHtml ? (
+          <div className="flex min-h-0 flex-1 flex-col px-[22px] pb-2 pt-4">
+            <div className="pb-2 text-[11.5px] font-medium text-muted">
+              Разделы появляются по мере готовности — можно читать, пока пишутся следующие.
+              Если начало не нравится, остановите генерацию, чтобы не тратить деньги.
+            </div>
+            <div
+              ref={previewRef}
+              className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-edge px-7 py-6"
+              style={{
+                background: '#fff',
+                color: '#000',
+                fontFamily: "'Times New Roman',Times,serif",
+                fontSize: '11.5pt',
+                lineHeight: 1.5,
+                textAlign: 'justify',
+              }}
+              dangerouslySetInnerHTML={{ __html: partialHtml }}
+            />
+          </div>
+        ) : mode === 'edit' ? (
           <div className="flex-1 overflow-y-auto px-[22px] pb-2 pt-4">
+            {sections.length > 0 && (
+              <label className="flex flex-col gap-1 pb-3">
+                <span className="text-[11.5px] font-medium text-muted">
+                  Что править (один раздел — быстрее и дешевле, остальной текст не тронется)
+                </span>
+                <select
+                  value={section}
+                  onChange={(e) => setSection(e.target.value)}
+                  disabled={running}
+                  className="cursor-pointer rounded-lg border border-edge bg-paper px-2.5 py-2 text-[13px] text-ink focus:border-accent"
+                >
+                  <option value="">Весь документ</option>
+                  {sections.map((t) => (
+                    <option key={t} value={t}>
+                      Раздел «{t}»
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-[11.5px] font-medium text-muted">
                 Что нужно исправить или изменить?
@@ -208,9 +280,10 @@ export function AiModal({
               />
             </label>
             <div className="pt-2 text-[11.5px] text-faint">
-              ИИ получит весь текущий документ ({Math.round(currentMd.length / 1000)} тыс.
-              символов) и вернёт исправленную версию целиком
-              {editTier ? ` — ${rub(editCost(editTier, currentMd.length))}` : ''}.
+              {section
+                ? `ИИ получит план работы и только раздел «${section}», перепишет его и подошьёт на место.`
+                : `ИИ получит весь текущий документ (${Math.round(currentMd.length / 1000)} тыс. символов) и вернёт исправленную версию целиком${editTier ? ` — ${rub(editCost(editTier, currentMd.length))}` : ''}.`}{' '}
+              Перед применением вы увидите изменения и сможете их отклонить.
             </div>
           </div>
         ) : (
@@ -342,17 +415,18 @@ export function AiModal({
                 />
               </SettingRow>
               {settings.titlePage && (
-                <div className="flex flex-col gap-2.5 pt-2">
-                  {TITLE_FIELDS.map((f) => (
-                    <TextField
-                      key={f.key}
-                      label={f.label}
-                      value={settings[f.key] as string}
-                      disabled={running}
-                      onChange={(e) => onSettingChange(f.key, e.target.value as never)}
-                      className="!bg-surface"
-                    />
-                  ))}
+                <div className="flex flex-col gap-1.5 pt-2">
+                  <TextField
+                    label="Тема на титульном листе"
+                    value={settings.topic}
+                    disabled={running}
+                    onChange={(e) => onSettingChange('topic', e.target.value)}
+                    className="!bg-surface"
+                  />
+                  <span className="text-[10.5px] text-faint">
+                    Остальные блоки титульника (вуз, исполнители, логотип) — в настройках
+                    документа: ⚙ над превью
+                  </span>
                 </div>
               )}
             </div>

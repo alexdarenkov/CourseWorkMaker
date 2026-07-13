@@ -10,6 +10,8 @@ export type Block =
   | { type: 'figure'; alt: string; src: string; caption: string | null }
   | { type: 'table'; rows: string[][]; caption: string | null }
   | { type: 'quote'; text: string }
+  | { type: 'pagebreak' }
+  | { type: 'blank' }
   | { type: 'hr' }
 
 export function esc(t: string): string {
@@ -44,12 +46,40 @@ export function inline(text: string): string {
     ph.push(katexHtml(c, false))
     return '\u0000' + (ph.length - 1) + '\u0000'
   })
+  // Длинное тире «—» заменяем на среднее «–» (код и формулы уже вынесены выше).
+  t = t.replace(/—/g, '–')
   t = esc(t)
   t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
   t = t.replace(/\*([^*]+)\*/g, '<i>$1</i>')
   t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<span style="text-decoration:underline">$1</span>')
+  t = t.replace(/\n/g, '<br>') // принудительный перенос строки (от «\» в исходнике)
   t = t.replace(/\u0000(\d+)\u0000/g, (_, n) => ph[+n])
   return t
+}
+
+/** Срезает ручной номер в начале заголовка («4.3 », «1.2.1 », «1. ») — нумерация
+ *  проставляется автоматически, поэтому ручная привела бы к двойной. Хвостовая
+ *  точка тоже срезается: в конце заголовка точка не ставится (ГОСТ 7.32). */
+export function stripHeadingNumber(text: string): string {
+  return text.replace(/^\s*\d+(?:\.\d+)*[.)]?\s+/, '').replace(/\s*\.$/, '')
+}
+
+// Заголовок «съедает» идущие сразу за ним пустые строки: между заголовком и
+// текстом не должно быть лишнего пустого абзаца — вертикальный интервал задаёт
+// стиль заголовка (space_after 21/14/12 пт), а не ручные переносы. Проверяем
+// последний УЖЕ добавленный блок, поэтому подряд идущие blank'и после заголовка
+// схлопываются все. Зеркалит _drop_blank_after_heading в
+// services/converter/app/md_parser.py.
+function dropBlankAfterHeading(blocks: Block[]): Block[] {
+  const out: Block[] = []
+  for (const b of blocks) {
+    const prev = out[out.length - 1]
+    if (b.type === 'blank' && prev && (prev.type === 'h1' || prev.type === 'h2' || prev.type === 'h3')) {
+      continue
+    }
+    out.push(b)
+  }
+  return out
 }
 
 export function parseMD(md: string): Block[] {
@@ -63,7 +93,14 @@ export function parseMD(md: string): Block[] {
   while (i < lines.length) {
     const t = lines[i].trim()
     if (!t) {
-      i++
+      // Пустые строки: каждая ЛИШНЯЯ (сверх одной, разделяющей абзацы) даёт
+      // видимую пустую строку в выводе.
+      let blanks = 0
+      while (i < lines.length && !lines[i].trim()) {
+        blanks++
+        i++
+      }
+      for (let k = 0; k < blanks - 1; k++) blocks.push({ type: 'blank' })
       continue
     }
     if ((m = t.match(/^```(\S*)/))) {
@@ -106,8 +143,11 @@ export function parseMD(md: string): Block[] {
       blocks.push({ type: 'math', code: content.trim() })
       continue
     }
-    if ((m = t.match(/^(#{1,3})\s+(.*)$/))) {
-      blocks.push({ type: ('h' + m[1].length) as 'h1' | 'h2' | 'h3', text: m[2] })
+    if ((m = t.match(/^(#{1,6})\s+(.*)$/))) {
+      // Уровни 4+ приводим к 3 (глубже ГОСТ не нумерует); ручные номера в
+      // тексте срезаем — нумерация всегда автоматическая.
+      const level = Math.min(3, m[1].length)
+      blocks.push({ type: ('h' + level) as 'h1' | 'h2' | 'h3', text: stripHeadingNumber(m[2]) })
       i++
       continue
     }
@@ -174,7 +214,8 @@ export function parseMD(md: string): Block[] {
       continue
     }
     if (/^(---+|\*\*\*+)$/.test(t)) {
-      blocks.push({ type: 'hr' })
+      // «---» / «***» — разрыв страницы.
+      blocks.push({ type: 'pagebreak' })
       i++
       continue
     }
@@ -184,16 +225,38 @@ export function parseMD(md: string): Block[] {
       const nt = lines[i].trim()
       if (
         !nt ||
-        /^(#{1,3}\s|```|\$\$|\||[-*]\s|\d+[.)]\s|>|!\[|---)/.test(nt) ||
+        /^(#{1,6}\s|```|\$\$|\||[-*]\s|\d+[.)]\s|>|!\[|---)/.test(nt) ||
         /^(Рисунок|Таблица):/i.test(nt)
       )
         break
       buf.push(nt)
       i++
     }
-    blocks.push({ type: 'p', text: buf.join(' ') })
+    blocks.push({ type: 'p', text: joinPara(buf) })
   }
-  return blocks
+  return dropBlankAfterHeading(blocks)
+}
+
+/** Каждый перенос строки в редакторе = перенос строки в выводе (breaks:true).
+ *  Пустая строка по-прежнему начинает новый абзац. Хвостовой «\» срезаем. */
+function joinPara(lines: string[]): string {
+  return lines.map((l) => (l.endsWith('\\') ? l.slice(0, -1).trimEnd() : l)).join('\n')
+}
+
+/** Пояснения к формуле «где A — …». Строки (по одному пояснению на строку, если
+ *  разделены «;»), либо одной строкой; null — если это не блок пояснений
+ *  (начинается с «где » и содержит тире). */
+export function splitGde(text: string): string[] | null {
+  const t = text.trim()
+  if (!/^где\s/i.test(t) || !/[–—-]/.test(t)) return null
+  if (t.includes(';')) {
+    const parts = t
+      .split(';')
+      .map((p) => p.trim())
+      .filter(Boolean)
+    if (parts.length >= 2) return parts.map((p, i) => (i < parts.length - 1 ? p + ';' : p))
+  }
+  return [t]
 }
 
 export function isStructural(txt: string): boolean {
