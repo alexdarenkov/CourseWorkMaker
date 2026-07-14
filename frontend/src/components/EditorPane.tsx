@@ -1,9 +1,10 @@
-import { RefObject, useMemo, useRef, useState } from 'react'
+import { RefObject, useRef, useState } from 'react'
 import { edColors, highlight } from '../lib/highlight'
 import { esc } from '../lib/markdown'
 import type { Settings } from '../lib/settings'
 import { effectiveTheme } from '../lib/theme'
-import { BoldIcon, CodeIcon, CollapseLeftIcon, DiagramIcon, GearIcon, HeadingIcon, ImageIcon, ItalicIcon, MathIcon, TableIcon, UploadIcon } from './icons'
+import { CodeIcon, CollapseLeftIcon, DiagramIcon, FolderIcon, GearIcon, ImageIcon, MathIcon, TableIcon, UploadIcon } from './icons'
+import { ImageLibraryModal } from './ImageLibraryModal'
 import { IconButton } from './ui'
 
 interface EditorPaneProps {
@@ -19,6 +20,8 @@ interface EditorPaneProps {
   onOpenSettings: () => void
   onCollapse: () => void
   onToast: (msg: string) => void
+  /** Панель под редактором (ИИ-консоль) — рендерится последним рядом секции. */
+  bottomPanel?: React.ReactNode
 }
 
 const SNIPPETS = {
@@ -41,32 +44,12 @@ export function EditorPane(props: EditorPaneProps) {
   // дочерних элементов парами).
   const dragDepth = useRef(0)
   const [dragOver, setDragOver] = useState(false)
+  const [libOpen, setLibOpen] = useState(false)
 
   const wrap = s.wordWrap
   const showGutter = s.lineNumbers && !wrap
   const lineCount = md.split('\n').length
 
-  // Разделы документа (h1/h2 вне код-фенсов) — быстрый переход из тулбара.
-  const sections = useMemo(() => {
-    const out: { label: string; line: number }[] = []
-    let inCode = false
-    md.split('\n').forEach((l, i) => {
-      if (l.trim().startsWith('```')) inCode = !inCode
-      const m = inCode ? null : l.match(/^(#{1,2})\s+(.+)/)
-      if (m) out.push({ label: (m[1].length === 2 ? ' ' : '') + m[2].trim(), line: i })
-    })
-    return out
-  }, [md])
-
-  const jumpToLine = (line: number) => {
-    const ta = props.taRef.current
-    if (!ta) return
-    const offset = md.split('\n').slice(0, line).join('\n').length + (line > 0 ? 1 : 0)
-    ta.focus()
-    ta.setSelectionRange(offset, offset)
-    // Строка раздела — в верхней трети окна (при переносе строк — приближённо).
-    ta.scrollTop = Math.max(0, line * Math.round(s.fontSize * 1.65) - 80)
-  }
   const mono = "'JetBrains Mono',ui-monospace,Menlo,monospace"
   // Целочисленная высота строки в пикселях (а не дробный множитель 1.65):
   // дробный line-height браузеры округляют по-разному в textarea, pre и
@@ -99,25 +82,6 @@ export function EditorPane(props: EditorPaneProps) {
     props.onChange(ta.value)
   }
 
-  /** Циклический заголовок для текущей строки: нет → # → ## → ### → нет. */
-  const cycleHeading = () => {
-    const ta = props.taRef.current
-    if (!ta) return
-    const pos = ta.selectionStart
-    const start = md.lastIndexOf('\n', pos - 1) + 1
-    let end = md.indexOf('\n', pos)
-    if (end < 0) end = md.length
-    const line = md.slice(start, end)
-    const m = line.match(/^(#{1,3})\s+/)
-    const next =
-      m === null ? '# ' + line : m[1].length < 3 ? '#' + line : line.replace(/^#{3}\s+/, '')
-    const scrollTop = ta.scrollTop
-    ta.focus()
-    ta.setSelectionRange(start, end)
-    ta.setRangeText(next, start, end, 'end')
-    ta.scrollTop = scrollTop
-    props.onChange(ta.value)
-  }
 
   /* ---------- drag&drop файлов ---------- */
 
@@ -211,42 +175,7 @@ export function EditorPane(props: EditorPaneProps) {
         >
           <UploadIcon />
         </IconButton>
-        {sections.length > 0 && (
-          <select
-            value=""
-            title="Перейти к разделу"
-            onChange={(e) => {
-              const line = Number(e.target.value)
-              if (!Number.isNaN(line)) jumpToLine(line)
-            }}
-            className="max-w-[190px] cursor-pointer truncate rounded-[7px] border-none bg-transparent px-1.5 py-1 text-[11.5px] font-medium text-muted hover:bg-hover"
-          >
-            <option value="" disabled hidden>
-              К разделу…
-            </option>
-            {sections.map((h) => (
-              <option key={h.line} value={h.line}>
-                {h.label}
-              </option>
-            ))}
-          </select>
-        )}
         <div className="flex-1" />
-        <IconButton title="Заголовок: цикл # → ## → ### для текущей строки" onClick={cycleHeading}>
-          <HeadingIcon />
-        </IconButton>
-        <IconButton
-          title="Жирный (Ctrl/Cmd+B)"
-          onClick={() => props.taRef.current && wrapSelection(props.taRef.current, '**')}
-        >
-          <BoldIcon />
-        </IconButton>
-        <IconButton
-          title="Курсив (Ctrl/Cmd+I)"
-          onClick={() => props.taRef.current && wrapSelection(props.taRef.current, '*')}
-        >
-          <ItalicIcon />
-        </IconButton>
         <div className="mx-1 h-4 w-px bg-hover" />
         <input
           ref={fileRef}
@@ -261,6 +190,12 @@ export function EditorPane(props: EditorPaneProps) {
         />
         <IconButton title="Вставить изображение с устройства" onClick={() => fileRef.current?.click()}>
           <ImageIcon />
+        </IconButton>
+        <IconButton
+          title="Библиотека картинок: вставить ранее загруженные, удалить лишние"
+          onClick={() => setLibOpen(true)}
+        >
+          <FolderIcon size={15} />
         </IconButton>
         <IconButton title="Вставить таблицу" onClick={() => props.onInsert(SNIPPETS.table)}>
           <TableIcon />
@@ -375,6 +310,15 @@ export function EditorPane(props: EditorPaneProps) {
           />
         </div>
       </div>
+      {props.bottomPanel}
+      {libOpen && (
+        <ImageLibraryModal
+          md={md}
+          onInsert={props.onInsert}
+          onClose={() => setLibOpen(false)}
+          onToast={props.onToast}
+        />
+      )}
     </section>
   )
 }

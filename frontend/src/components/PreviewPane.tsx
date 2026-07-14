@@ -48,16 +48,6 @@ export function PreviewPane(props: PreviewPaneProps) {
         className="flex h-[38px] flex-shrink-0 items-center gap-1.5 overflow-hidden border-b pl-3.5 pr-2.5"
         style={{ borderColor: 'var(--line)', background: 'var(--preview-bar)', flexWrap: 'nowrap' }}
       >
-        <span
-          title="Превью соответствует итоговому DOCX по ГОСТ 7.32—2017"
-          className="whitespace-nowrap rounded-[5px] px-1.5 py-px text-[10px] font-semibold tracking-wide"
-          style={{ background: 'var(--chip-bg)', color: 'var(--chip-text)' }}
-        >
-          DOCX · ГОСТ 7.32
-        </span>
-        <span className="whitespace-nowrap text-[11px]" style={{ color: 'var(--faint)' }}>
-          A4 · Times 14 · 1,5
-        </span>
         <div className="min-w-1 flex-1" />
         <IconButton title="Уменьшить" onClick={props.onZoomOut} hoverBg="var(--hover-2)" size={28}>
           <MinusIcon />

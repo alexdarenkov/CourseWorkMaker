@@ -187,6 +187,13 @@ export const UndoIcon = ({ size = 13, strokeWidth = 2 }: IconProps) => (
   </svg>
 )
 
+export const RedoIcon = ({ size = 13, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M21 7v6h-6" />
+    <path d="M3 17a9 9 0 0 1 15-6.7L21 13" />
+  </svg>
+)
+
 export const ArchiveIcon = ({ size = 16, strokeWidth = 1.8 }: IconProps) => (
   <svg {...svgProps(size, strokeWidth)}>
     <rect x="2" y="4" width="20" height="5" rx="1" />
@@ -206,6 +213,25 @@ export const TrashIcon = ({ size = 15, strokeWidth = 1.8 }: IconProps) => (
 export const SparklesIcon = ({ size = 15, strokeWidth = 1.8 }: IconProps) => (
   <svg {...svgProps(size, strokeWidth)}>
     <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
+  </svg>
+)
+
+export const PaperclipIcon = ({ size = 15, strokeWidth = 1.8 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+  </svg>
+)
+
+export const ArrowUpIcon = ({ size = 15, strokeWidth = 2.2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M12 19V5" />
+    <path d="m5 12 7-7 7 7" />
+  </svg>
+)
+
+export const StopIcon = ({ size = 13, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none" />
   </svg>
 )
 

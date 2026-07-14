@@ -17,6 +17,7 @@ from .agent import (
 )
 from .files import build_context
 from .jobs import Job, store
+from .prompt_check import PromptKind, analyze_prompt as run_prompt_analysis, check_prompt
 from .sources import check_bibliography_urls
 
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +58,53 @@ async def generate(
     job = store.create(x_user_id)
     job.task = asyncio.create_task(_run_job(job, opts, uploads))
     return {"jobId": job.id}
+
+
+class ValidatePromptRequest(BaseModel):
+    # topic — тема новой работы, edit — инструкция правки документа.
+    kind: PromptKind
+    text: str = Field(min_length=1, max_length=8000)
+
+
+@app.post("/validate-prompt")
+async def validate_prompt(req: ValidatePromptRequest) -> dict:
+    """Смысловая проверка промпта быстрой моделью ДО запуска конвейера.
+    Fail-open: без ключа или при сбое валидатора промпт пропускается —
+    настоящая генерация всё равно вернёт свою ошибку, если что не так."""
+    if not config.AI_API_KEY:
+        return {"ok": True, "reason": None}
+    ok, reason = await check_prompt(req.kind, req.text)
+    return {"ok": ok, "reason": reason}
+
+
+class AnalyzePromptRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=8000)
+
+
+@app.post("/analyze-prompt")
+async def analyze_prompt(req: AnalyzePromptRequest) -> dict:
+    """Валидация + разбор промпта генерации быстрой моделью: тема, требования
+    и явно запрошенные элементы структуры (для авто-настройки тогглов на
+    фронте). Fail-open: без ключа/при сбое промпт целиком становится темой."""
+    if not config.AI_API_KEY:
+        a = {"ok": True, "reason": None, "topic": req.text.strip()[:500], "requirements": ""}
+    else:
+        a = await run_prompt_analysis(req.text)
+    # camelCase-алиасы для фронта (конвенция проекта).
+    return {
+        "ok": a["ok"],
+        "reason": a.get("reason"),
+        "topic": a.get("topic", ""),
+        "requirements": a.get("requirements", ""),
+        "targetPages": a.get("target_pages"),
+        "includeTables": a.get("include_tables"),
+        "includeDiagrams": a.get("include_diagrams"),
+        "includeFormulas": a.get("include_formulas"),
+        "includeImages": a.get("include_images"),
+        "includeWebImages": a.get("include_web_images"),
+        "includeCodeAppendix": a.get("include_code_appendix"),
+        "includeBibliography": a.get("include_bibliography"),
+    }
 
 
 class LintRequest(BaseModel):

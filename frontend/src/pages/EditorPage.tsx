@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { aiApi, AiJob, convertApi, DocumentDto, documentsApi } from '../api'
 import { useAuth } from '../auth/AuthContext'
-import { AiJobKind, AiModal } from '../components/AiModal'
-import { DiffModal } from '../components/DiffModal'
+import { AiConsole, AiJobKind } from '../components/AiConsole'
+import { DiffPane } from '../components/DiffPane'
 import { DocsModal } from '../components/DocsModal'
 import { EditorPane } from '../components/EditorPane'
 import { Header } from '../components/Header'
@@ -13,7 +13,6 @@ import { PreviewPane } from '../components/PreviewPane'
 import { CollapseLeftIcon, CollapseRightIcon } from '../components/icons'
 import { IconButton } from '../components/ui'
 import { SettingsModal } from '../components/SettingsModal'
-import { StatusBar } from '../components/StatusBar'
 import { Toast } from '../components/Toast'
 import { UserModal } from '../components/UserModal'
 import { addImageAsset, getAsset, importAssets, pruneAssets, referencedAssets } from '../lib/assets'
@@ -21,7 +20,7 @@ import { getMermaidSvg, mermaidToPng } from '../lib/mermaidRenderer'
 import { parseMD } from '../lib/markdown'
 import { Page, paginate } from '../lib/paginate'
 import { EDITOR_ONLY_KEYS, migrateSettings, Settings } from '../lib/settings'
-import { loadAiSnapshot, loadPersisted, saveAiSnapshot, savePersisted } from '../lib/storage'
+import { loadPersisted, savePersisted } from '../lib/storage'
 import { applyTheme, effectiveTheme, onSystemThemeChange } from '../lib/theme'
 
 const PAGE_WIDTH_PX = 794
@@ -81,11 +80,12 @@ export function EditorPage() {
   const [collapsed, setCollapsed] = useState<'none' | 'editor' | 'preview'>('none')
   const [zoom, setZoom] = useState<number | null>(null)
   const [pages, setPages] = useState<Page[]>([])
-  const [saved, setSaved] = useState(true)
+  // Индикатор «Сохранено» удалён вместе с футером; setSaved оставлен —
+  // на нём держится дебаунс автосохранения (scheduleSave/persistNow).
+  const [, setSaved] = useState(true)
   const [downloading, setDownloading] = useState<false | 'docx' | 'pdf'>(false)
   const [settingsSection, setSettingsSection] = useState<'doc' | 'ed' | null>(null)
   const [userOpen, setUserOpen] = useState(false)
-  const [aiOpen, setAiOpen] = useState(false)
   const [aiJob, setAiJob] = useState<AiJob | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [docsOpen, setDocsOpen] = useState(false)
@@ -93,8 +93,10 @@ export function EditorPage() {
   // Последний результат нормоконтроля (бейдж в статус-баре) и открыт ли список.
   const [lintResult, setLintResult] = useState<string[] | null>(null)
   const [lintOpen, setLintOpen] = useState(false)
-  // Текст до применения результата ИИ — кнопка «Откатить» в статус-баре.
-  const [aiSnapshot, setAiSnapshot] = useState<string | null>(() => loadAiSnapshot())
+  // История ИИ-изменений ТЕКУЩЕГО отчёта (не переживает смену документа —
+  // раньше persist-снапшот «протекал» между отчётами): before — текст до
+  // правки, after — после, at — на какой версии стоит редактор.
+  const [aiHist, setAiHist] = useState<{ before: string; after: string; at: 'before' | 'after' } | null>(null)
   // Готовая ИИ-правка, ожидающая решения пользователя в diff-просмотре.
   const [pendingAi, setPendingAi] = useState<{
     oldMd: string
@@ -321,11 +323,34 @@ export function EditorPage() {
       userTouched.current = true
       stopAiPolling()
       aiJobIdRef.current = jobId
+      // Текст до генерации: при живом стриминге partial пишется прямо в
+      // редактор, поэтому снапшот для отката снимается с исходного текста
+      // при ПЕРВОМ же чанке (а не в конце).
+      const preMd = stateRef.current.md
+      let streamed = false
+      let lastPartial = ''
       setAiJob({ id: jobId, status: 'queued', stage: 'В очереди', progress: 0, markdown: null, error: null })
       aiPollRef.current = window.setInterval(async () => {
         try {
           const j = await aiApi.job(jobId)
           setAiJob(j)
+          // Живой стриминг генерации: растущий partial (готовые разделы +
+          // «печатающийся» черновик текущего) показывается прямо в редакторе
+          // и превью; по завершении заменится финальной версией.
+          if (
+            kind === 'generate' &&
+            (j.status === 'running' || j.status === 'queued') &&
+            j.partial &&
+            j.partial !== lastPartial
+          ) {
+            lastPartial = j.partial
+            streamed = true
+            setMd(j.partial)
+            schedulePaginate()
+            // Автопрокрутка редактора к «печатающейся» строке.
+            const ta = taRef.current
+            if (ta) requestAnimationFrame(() => (ta.scrollTop = ta.scrollHeight))
+          }
           if (j.status === 'done' || j.status === 'error' || j.status === 'cancelled') {
             stopAiPolling()
             aiJobIdRef.current = null
@@ -335,27 +360,29 @@ export function EditorPage() {
                 // решает — принять или отклонить.
                 setPendingAi({ oldMd: stateRef.current.md, markdown: j.markdown, assets: j.assets })
                 setAiJob(null)
-                setAiOpen(false)
               } else {
-                // Генерация с нуля заменяет документ сразу; снапшот позволяет
-                // откатиться кнопкой в статус-баре.
-                saveAiSnapshot(stateRef.current.md)
-                setAiSnapshot(stateRef.current.md)
                 // Сначала кладём сгенерированные графики в хранилище, потом
                 // текст, чтобы превью сразу нашло картинки asset:fig-N.
                 importAssets(j.assets)
                 onMdChange(j.markdown)
+                setAiHist({ before: preMd, after: j.markdown, at: 'after' })
                 showToast(successMsg)
                 setAiJob(null)
-                setAiOpen(false)
               }
             } else if (j.status === 'cancelled') {
               if (kind === 'generate' && j.partial?.trim()) {
-                // Уже написанные разделы не пропадают: пользователь видит их в
-                // diff-просмотре и решает, забирать ли в редактор.
-                setPendingAi({ oldMd: stateRef.current.md, markdown: j.partial })
-                showToast('Генерация остановлена — можно принять уже написанные разделы')
-                setAiOpen(false)
+                if (streamed) {
+                  // Частичный текст уже в редакторе — фиксируем его; исходный
+                  // текст возвращается стрелкой «назад» в шапке.
+                  onMdChange(j.partial)
+                  setAiHist({ before: preMd, after: j.partial, at: 'after' })
+                  showToast('Генерация остановлена — исходный текст вернёт стрелка «назад» в шапке')
+                } else {
+                  // Уже написанные разделы не пропадают: пользователь видит их
+                  // в diff-просмотре и решает, забирать ли в редактор.
+                  setPendingAi({ oldMd: preMd, markdown: j.partial })
+                  showToast('Генерация остановлена — можно принять уже написанные разделы')
+                }
               } else {
                 showToast('Задача ИИ остановлена')
               }
@@ -367,19 +394,24 @@ export function EditorPage() {
         } catch {
           /* временная ошибка опроса — продолжаем */
         }
-      }, 1500)
+      }, 700)
     },
-    [onMdChange, showToast, stopAiPolling],
+    [onMdChange, schedulePaginate, showToast, stopAiPolling],
   )
+
+  // Diff-просмотр выключен в настройках — ИИ-правка применяется сразу.
+  useEffect(() => {
+    if (pendingAi && !settings.showDiff) applyPendingAi()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAi, settings.showDiff])
 
   const applyPendingAi = useCallback(() => {
     if (!pendingAi) return
-    saveAiSnapshot(pendingAi.oldMd)
-    setAiSnapshot(pendingAi.oldMd)
     importAssets(pendingAi.assets)
     onMdChange(pendingAi.markdown)
+    setAiHist({ before: pendingAi.oldMd, after: pendingAi.markdown, at: 'after' })
     setPendingAi(null)
-    showToast('Правка применена — откат доступен в статус-баре')
+    showToast('Правка применена — откат стрелкой «назад» в шапке')
   }, [pendingAi, onMdChange, showToast])
 
   const rejectPendingAi = useCallback(() => {
@@ -580,14 +612,21 @@ export function EditorPage() {
 
   // Меняет местами текущий текст и снапшот: повторное нажатие возвращает
   // ИИ-версию, так что случайный клик ничего не теряет.
-  const rollbackAi = useCallback(() => {
-    if (aiSnapshot === null) return
-    const current = stateRef.current.md
-    onMdChange(aiSnapshot)
-    saveAiSnapshot(current)
-    setAiSnapshot(current)
-    showToast('Текст заменён — повторное нажатие вернёт обратно')
-  }, [aiSnapshot, onMdChange, showToast])
+  // Назад/вперёд между версиями «до ИИ-правки» и «после» — в рамках
+  // ТЕКУЩЕГО отчёта (история сбрасывается при смене документа).
+  const aiBack = useCallback(() => {
+    if (!aiHist || aiHist.at !== 'after') return
+    onMdChange(aiHist.before)
+    setAiHist({ ...aiHist, at: 'before' })
+    showToast('Возвращён текст до ИИ-изменения — стрелка «вперёд» вернёт результат')
+  }, [aiHist, onMdChange, showToast])
+
+  const aiForward = useCallback(() => {
+    if (!aiHist || aiHist.at !== 'before') return
+    onMdChange(aiHist.after)
+    setAiHist({ ...aiHist, at: 'after' })
+    showToast('Возвращён результат ИИ')
+  }, [aiHist, onMdChange, showToast])
 
   /* ---------- нормоконтроль ---------- */
 
@@ -678,6 +717,9 @@ export function EditorPage() {
       await flushRemoteSave()
       userTouched.current = true
       docIdRef.current = doc.id
+      // История ИИ-правок и отложенный diff принадлежат прошлому документу.
+      setAiHist(null)
+      setPendingAi(null)
       setDocName(doc.name)
       setMd(doc.content)
       try {
@@ -699,6 +741,8 @@ export function EditorPage() {
       const { settings: s } = stateRef.current
       const doc = await documentsApi.create('Новая работа', '', JSON.stringify(s))
       docIdRef.current = doc.id
+      setAiHist(null)
+      setPendingAi(null)
       setDocName(doc.name)
       setMd('')
       schedulePaginate()
@@ -785,7 +829,6 @@ export function EditorPage() {
   }, [fitZoom])
 
   const zoomValue = zoom ?? 0.8
-  const wordCount = useMemo(() => (md.trim() ? md.trim().split(/\s+/).length : 0), [md])
 
   return (
     <div
@@ -806,13 +849,16 @@ export function EditorPage() {
         onDownload={download}
         onExportZip={exportZip}
         onExportMd={exportMd}
-        onOpenAi={() => {
-          if (requireAuth()) setAiOpen(true)
-        }}
         onOpenDocs={() => {
           if (requireAuth()) setDocsOpen(true)
         }}
-        aiJob={aiActive ? aiJob : null}
+        lintBusy={lintBusy}
+        lintCount={lintResult === null ? null : lintResult.length}
+        onLint={runLint}
+        canBack={aiHist?.at === 'after'}
+        canForward={aiHist?.at === 'before'}
+        onBack={aiBack}
+        onForward={aiForward}
         theme={effectiveTheme(settings.theme)}
         onToggleTheme={() =>
           onSettingChange('theme', effectiveTheme(settings.theme) === 'dark' ? 'light' : 'dark')
@@ -831,6 +877,14 @@ export function EditorPage() {
               <CollapseRightIcon />
             </IconButton>
           </div>
+        ) : pendingAi && settings.showDiff ? (
+          <DiffPane
+            width={collapsed === 'preview' ? '100%' : (split * 100).toFixed(1) + '%'}
+            oldText={pendingAi.oldMd}
+            newText={pendingAi.markdown}
+            onApply={applyPendingAi}
+            onReject={rejectPendingAi}
+          />
         ) : (
           <EditorPane
             md={md}
@@ -845,6 +899,16 @@ export function EditorPage() {
             onToast={showToast}
             onOpenSettings={() => setSettingsSection('ed')}
             onCollapse={() => setCollapsed('editor')}
+            bottomPanel={
+              <AiConsole
+                currentMd={md}
+                job={aiActive ? aiJob : null}
+                onEnsureAuth={requireAuth}
+                onStarted={trackAiJob}
+                onCancel={cancelAi}
+                onToast={showToast}
+              />
+            }
           />
         )}
         {collapsed === 'none' && (
@@ -884,17 +948,6 @@ export function EditorPage() {
         )}
       </div>
 
-      <StatusBar
-        saved={saved}
-        wordCount={wordCount}
-        pageCount={pages.length}
-        pageTarget={settings.targetPages || 0}
-        lintBusy={lintBusy}
-        lintCount={lintResult === null ? null : lintResult.length}
-        onLint={runLint}
-        canRollback={aiSnapshot !== null}
-        onRollback={rollbackAi}
-      />
 
       {settingsSection && (
         <SettingsModal
@@ -917,30 +970,6 @@ export function EditorPage() {
       )}
       {lintOpen && lintResult && (
         <LintModal issues={lintResult} onClose={() => setLintOpen(false)} />
-      )}
-      {pendingAi && (
-        <DiffModal
-          oldText={pendingAi.oldMd}
-          newText={pendingAi.markdown}
-          onApply={applyPendingAi}
-          onReject={rejectPendingAi}
-        />
-      )}
-      {aiOpen && (
-        <AiModal
-          defaultTopic={settings.topic}
-          currentMd={md}
-          settings={settings}
-          onSettingChange={onSettingChange}
-          job={aiJob}
-          onStarted={trackAiJob}
-          onCancel={cancelAi}
-          onClose={() => {
-            setAiOpen(false)
-            if (aiActive) showToast('Задача ИИ продолжается в фоне — прогресс виден в шапке')
-          }}
-          onToast={showToast}
-        />
       )}
       {toast && <Toast message={toast} />}
     </div>

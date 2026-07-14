@@ -34,20 +34,6 @@ export function savePersisted(state: PersistedState): void {
 }
 
 // Текст документа до применения результата ИИ — для кнопки «Откатить».
-const AI_SNAPSHOT_KEY = 'md2docx:ai-snapshot:v1'
-
-export function loadAiSnapshot(): string | null {
-  return localStorage.getItem(AI_SNAPSHOT_KEY)
-}
-
-export function saveAiSnapshot(md: string | null): void {
-  try {
-    if (md === null) localStorage.removeItem(AI_SNAPSHOT_KEY)
-    else localStorage.setItem(AI_SNAPSHOT_KEY, md)
-  } catch {
-    /* квота/приватный режим */
-  }
-}
 
 const TOKEN_KEY = 'md2docx:token'
 
