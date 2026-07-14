@@ -3,7 +3,7 @@ import { convertApi } from '../api'
 import { addImageAsset, addRawAsset, getAsset } from '../lib/assets'
 import type { Settings } from '../lib/settings'
 import { CloseIcon, Spinner } from './icons'
-import { SegButton, SettingRow, TextField, Toggle } from './ui'
+import { SettingRow, TextField, Toggle } from './ui'
 
 /** Многострочный блок титульного листа. */
 function TitleArea(props: {
@@ -54,6 +54,11 @@ const DOC_TOGGLES: { key: keyof Settings; label: string; desc: string }[] = [
 // и отчёты по лабораторным с несколькими исполнителями и логотипом вуза.
 
 const ED_TOGGLES: { key: keyof Settings; label: string; desc: string }[] = [
+  {
+    key: 'showDiff',
+    label: 'Diff-просмотр ИИ-правок',
+    desc: 'Показывать изменения в редакторе перед применением; выкл — применять сразу',
+  },
   { key: 'syntaxHl', label: 'Подсветка синтаксиса', desc: 'Заголовки, жирный, код, формулы, ссылки' },
   { key: 'wordWrap', label: 'Перенос строк', desc: 'Длинные строки переносятся по ширине окна' },
   { key: 'lineNumbers', label: 'Номера строк', desc: 'Показываются при выключенном переносе строк' },
@@ -125,28 +130,6 @@ export function SettingsModal({ settings: s, section, onChange, onClose }: Setti
                   />
                 </SettingRow>
               ))}
-              <SettingRow
-                label="Целевой объём"
-                desc="Прогресс «N из ~M стр.» показывается в статус-баре"
-              >
-                <div className="flex flex-shrink-0 items-center gap-2.5">
-                  <input
-                    type="range"
-                    min={5}
-                    max={60}
-                    step={1}
-                    value={s.targetPages}
-                    onChange={(e) => onChange('targetPages', +e.target.value)}
-                    style={{ width: 120, accentColor: '#d97757' }}
-                  />
-                  <span
-                    className="text-right text-[12.5px] text-soft"
-                    style={{ width: 44, fontVariantNumeric: 'tabular-nums' }}
-                  >
-                    {s.targetPages} стр.
-                  </span>
-                </div>
-              </SettingRow>
               {s.titlePage && (
                 <div className="mb-1 mt-3.5 flex flex-col rounded-xl border border-edge bg-paper px-4 pb-4 pt-2">
                   <div className="pb-0.5 pt-2 text-[11px] font-bold uppercase tracking-[.08em] text-faint">
@@ -294,25 +277,6 @@ export function SettingsModal({ settings: s, section, onChange, onClose }: Setti
           )}
           {section === 'ed' && (
             <>
-              <SettingRow label="Тема оформления" desc="«Системная» следует настройке ОС">
-                <div className="flex w-[228px] flex-shrink-0 gap-1 rounded-[10px] bg-hover p-1">
-                  {(
-                    [
-                      ['light', 'Светлая'],
-                      ['auto', 'Системная'],
-                      ['dark', 'Тёмная'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <SegButton
-                      key={value}
-                      active={s.theme === value}
-                      onClick={() => onChange('theme', value)}
-                    >
-                      {label}
-                    </SegButton>
-                  ))}
-                </div>
-              </SettingRow>
               <SettingRow label="Размер шрифта" desc="Моноширинный шрифт редактора">
                 <div className="flex flex-shrink-0 items-center gap-2.5">
                   <input
@@ -342,9 +306,6 @@ export function SettingsModal({ settings: s, section, onChange, onClose }: Setti
               ))}
             </>
           )}
-        </div>
-        <div className="border-t border-hover px-[22px] py-3 text-[11.5px] text-faint">
-          Изменения применяются к превью мгновенно
         </div>
       </div>
     </div>

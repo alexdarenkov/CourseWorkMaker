@@ -126,6 +126,29 @@ export const aiApi = {
     for (const f of files) form.append('files', f)
     return api<{ jobId: string }>('/api/ai/generate', { method: 'POST', body: form })
   },
+  // Разбор промпта генерации: валидация + тема/требования + явные элементы
+  // структуры (null — в промпте не упомянуто, тоггл не трогаем).
+  analyzePrompt: (text: string) =>
+    api<{
+      ok: boolean
+      reason: string | null
+      topic: string
+      requirements: string
+      targetPages: number | null
+      includeTables: boolean | null
+      includeDiagrams: boolean | null
+      includeFormulas: boolean | null
+      includeImages: boolean | null
+      includeWebImages: boolean | null
+      includeCodeAppendix: boolean | null
+      includeBibliography: boolean | null
+    }>('/api/ai/analyze-prompt', { method: 'POST', body: JSON.stringify({ text }) }),
+  // Смысловая проверка промпта быстрой моделью до запуска конвейера.
+  validatePrompt: (kind: 'topic' | 'edit', text: string) =>
+    api<{ ok: boolean; reason: string | null }>('/api/ai/validate-prompt', {
+      method: 'POST',
+      body: JSON.stringify({ kind, text }),
+    }),
   edit: (instruction: string, markdown: string) =>
     api<{ jobId: string }>('/api/ai/edit', {
       method: 'POST',

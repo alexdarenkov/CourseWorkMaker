@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import type { AiJob } from '../api'
 import {
   ArchiveIcon,
   ChevronDownIcon,
@@ -7,9 +6,11 @@ import {
   FileTextIcon,
   FolderIcon,
   MoonIcon,
-  SparklesIcon,
+  ShieldCheckIcon,
   Spinner,
   SunIcon,
+  RedoIcon,
+  UndoIcon,
 } from './icons'
 import { IconButton } from './ui'
 
@@ -20,9 +21,18 @@ interface HeaderProps {
   onDownload: (format: 'docx' | 'pdf') => void
   onExportZip: () => void
   onExportMd: () => void
-  onOpenAi: () => void
   onOpenDocs: () => void
-  aiJob: AiJob | null
+  /** Нормоконтроль (перенесён из футера): проверка оформления без ИИ. */
+  lintBusy: boolean
+  /** Число замечаний последней проверки или null, если не запускалась. */
+  lintCount: number | null
+  onLint: () => void
+  /** История ИИ-изменений текущего отчёта: назад — текст до правки,
+   *  вперёд — результат ИИ (кнопки видны, пока история существует). */
+  canBack: boolean
+  canForward: boolean
+  onBack: () => void
+  onForward: () => void
   /** Фактическая тема (auto уже развёрнут в light/dark). */
   theme: 'light' | 'dark'
   onToggleTheme: () => void
@@ -97,29 +107,49 @@ export function Header(props: HeaderProps) {
         </IconButton>
       </div>
       <div className="flex-1" />
+      {(props.canBack || props.canForward) && (
+        <div className="flex items-center">
+          <button
+            onClick={props.onBack}
+            disabled={!props.canBack}
+            title="Назад: вернуть текст до ИИ-изменения (в рамках текущего отчёта)"
+            className="flex cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-muted hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-35"
+            style={{ width: 30, height: 30 }}
+          >
+            <UndoIcon />
+          </button>
+          <button
+            onClick={props.onForward}
+            disabled={!props.canForward}
+            title="Вперёд: вернуть результат ИИ (в рамках текущего отчёта)"
+            className="flex cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-muted hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-35"
+            style={{ width: 30, height: 30 }}
+          >
+            <RedoIcon />
+          </button>
+        </div>
+      )}
       <button
-        onClick={props.onOpenAi}
-        title={
-          props.aiJob
-            ? `${props.aiJob.stage} — нажмите, чтобы открыть окно (там можно остановить)`
-            : 'Сгенерировать курсовую с помощью ИИ'
-        }
-        className="relative flex cursor-pointer items-center gap-2 overflow-hidden rounded-full border border-warm-border bg-transparent px-3.5 py-1.5 text-[13px] font-semibold text-warm transition-colors hover:bg-warm-bg"
+        onClick={props.onLint}
+        disabled={props.lintBusy}
+        title="Нормоконтроль: проверить оформление по ГОСТ — подписи, ссылки на источники, заголовки, габариты таблиц и схем"
+        className="relative flex cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-muted transition-colors hover:bg-hover hover:text-ink disabled:opacity-60"
+        style={{ width: 34, height: 34 }}
       >
-        {props.aiJob && (
+        {props.lintBusy ? <Spinner /> : <ShieldCheckIcon />}
+        {!props.lintBusy && props.lintCount !== null && (
           <span
-            className="absolute inset-y-0 left-0 bg-warm-bg transition-all duration-500"
-            style={{ width: `${Math.max(4, props.aiJob.progress * 100)}%` }}
-          />
-        )}
-        <span className="relative flex items-center gap-2">
-          {props.aiJob ? <Spinner /> : <SparklesIcon />}
-          <span>
-            {props.aiJob
-              ? `ИИ работает… ${Math.round(props.aiJob.progress * 100)}%`
-              : 'Сгенерировать с ИИ'}
+            className="absolute rounded-full px-1 text-[9.5px] font-bold leading-[14px]"
+            style={{
+              top: 1,
+              right: -2,
+              background: props.lintCount > 0 ? 'rgba(217,162,63,.9)' : 'rgba(93,138,82,.9)',
+              color: '#fff',
+            }}
+          >
+            {props.lintCount > 0 ? props.lintCount : '✓'}
           </span>
-        </span>
+        )}
       </button>
 
       {/* Единая кнопка экспорта: .docx — основное действие, остальное в меню. */}

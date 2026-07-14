@@ -31,6 +31,18 @@ export function getAsset(src: string): string | null {
   return assets[src] ?? null
 }
 
+/** Все сохранённые картинки (для библиотеки изображений в редакторе). */
+export function listAssets(): { key: string; dataUrl: string }[] {
+  return Object.entries(assets).map(([key, dataUrl]) => ({ key, dataUrl }))
+}
+
+/** Удаляет картинку из хранилища (ссылки в markdown станут заглушками). */
+export function removeAsset(key: string): void {
+  if (!(key in assets)) return
+  delete assets[key]
+  persist()
+}
+
 /** Импорт ассетов, сгенерированных ИИ (графики matplotlib), в хранилище. */
 export function importAssets(incoming: Record<string, string> | undefined): void {
   if (!incoming) return

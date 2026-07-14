@@ -25,6 +25,8 @@ export interface Settings {
   targetPages: number
   /** 'auto' — следовать системной теме. */
   theme: 'light' | 'dark' | 'auto'
+  /** Показывать diff ИИ-правки перед применением (выкл — применять сразу). */
+  showDiff: boolean
   fontSize: number
   wordWrap: boolean
   lineNumbers: boolean
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   titleCustom: '',
   targetPages: 15,
   theme: 'light',
+  showDiff: true,
   fontSize: 14,
   // Перенос строк выключен по умолчанию: при переносе невидимая textarea и
   // подсвеченный pre-слой разбивают длинные строки разными движками, из-за чего
@@ -95,6 +98,7 @@ export function migrateSettings(raw: Record<string, unknown>): Record<string, un
 /** Поля настроек, не требующие перепагинации превью. */
 export const EDITOR_ONLY_KEYS: (keyof Settings)[] = [
   'theme',
+  'showDiff',
   'fontSize',
   'wordWrap',
   'lineNumbers',

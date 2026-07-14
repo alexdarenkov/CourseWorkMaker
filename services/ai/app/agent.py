@@ -21,6 +21,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from typing import Literal
 
@@ -500,8 +501,27 @@ class CourseworkAgent:
         for idx, section in enumerate(outline.sections):
             base = 0.10 + 0.70 * idx / total
             await progress(f"Раздел {idx + 1}/{total}: «{section.title}»", base)
+
+            # Стриминг черновика: partial = готовые разделы + растущий текст
+            # текущего (фронт показывает «печать» вживую). Троттлинг ~0.4 с,
+            # чтобы не заливать job-store на каждый токен.
+            last_push = 0.0
+            done_parts = "\n\n".join(body_parts)
+
+            async def on_chunk(acc: str) -> None:
+                nonlocal last_push
+                now = time.monotonic()
+                if now - last_push < 0.4:
+                    return
+                last_push = now
+                await progress(
+                    f"Раздел {idx + 1}/{total}: «{section.title}»",
+                    base,
+                    (done_parts + "\n\n" + acc).strip(),
+                )
+
             draft = await self._write_section(
-                opts, source_context, outline, section, running_summary
+                opts, source_context, outline, section, running_summary, on_chunk
             )
             await progress(
                 f"Раздел {idx + 1}/{total}: самопроверка", base + 0.45 / total
@@ -647,6 +667,7 @@ class CourseworkAgent:
         outline: Outline,
         section: OutlineSection,
         running_summary: str,
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
         plan = "\n".join(
             f"- {s.title}" + (f" ({', '.join(s.subsections)})" if s.subsections else "")
@@ -728,9 +749,24 @@ class CourseworkAgent:
 
 Начни ровно со строки `# {section.title}`. Внутри раздела не используй других
 заголовков `#` 1-го уровня. Верни только markdown, без пояснений и без обрамляющих ```."""
-        resp = await self.llm.ainvoke(
-            [SystemMessage(content=system), HumanMessage(content=user)]
-        )
+        messages = [SystemMessage(content=system), HumanMessage(content=user)]
+        # Стриминг: черновик раздела виден пользователю по мере печати модели
+        # (on_chunk получает НАКОПЛЕННЫЙ текст). Если прокси/модель не умеет
+        # стримить — падаем обратно на обычный вызов.
+        if on_chunk is not None:
+            try:
+                acc: list[str] = []
+                async for part in self.llm.astream(messages):
+                    text = part.content if isinstance(part.content, str) else ""
+                    if text:
+                        acc.append(text)
+                        await on_chunk("".join(acc))
+                if acc:
+                    return strip_fences("".join(acc))
+                log.warning("Стриминг вернул пустой ответ — повторяем без стриминга")
+            except Exception:
+                log.warning("Стриминг не удался — повторяем без стриминга", exc_info=True)
+        resp = await self.llm.ainvoke(messages)
         return strip_fences(resp.content)
 
     async def _self_check_section(self, section: OutlineSection, draft: str) -> str:
