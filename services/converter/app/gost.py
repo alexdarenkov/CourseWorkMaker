@@ -106,9 +106,7 @@ class _GostBuilder:
 
     def build(self, blocks: list[mdp.Block]) -> None:
         if self.s.title_page:
-            custom = self.resolver.resolve(self.s.title_custom) if self.s.title_custom else None
-            if custom is None or not self._custom_title_page(custom):
-                self._title_page()
+            self._title_page()
         # Реферат — первый заголовок документа: его страница идёт ДО содержания
         # и в содержание не включается (ГОСТ 7.32: титульный лист → реферат →
         # содержание).
@@ -402,32 +400,6 @@ class _GostBuilder:
             p.add_run().add_picture(io.BytesIO(data), width=Mm(w_mm * scale))
         except Exception:
             log.warning("Failed to embed title logo", exc_info=True)
-
-    def _custom_title_page(self, data: bytes) -> bool:
-        """Пользовательский титульник: картинка (отрендеренная страница его
-        PDF/DOCX) на всю первую страницу в секции без полей; контент идёт со
-        второй секции с ГОСТ-полями. False — картинка не читается, тогда
-        строится обычный сгенерированный титульник."""
-        try:
-            DocxImage.from_blob(data)
-        except Exception:
-            log.warning("Custom title image unreadable", exc_info=True)
-            return False
-        sec = self.doc.sections[0]
-        sec.left_margin = Mm(0)
-        sec.right_margin = Mm(0)
-        sec.top_margin = Mm(0)
-        sec.bottom_margin = Mm(0)
-        sec.header_distance = Mm(0)
-        sec.footer_distance = Mm(0)
-        p = self._p()
-        pf = p.paragraph_format
-        pf.line_spacing = 1.0
-        pf.space_before = Pt(0)
-        pf.space_after = Pt(0)
-        p.add_run().add_picture(io.BytesIO(data), width=Mm(210), height=Mm(297))
-        self._apply_page_format(self.doc.add_section(WD_SECTION_START.NEW_PAGE))
-        return True
 
     def _title_page(self) -> None:
         """Титульный лист из свободных блоков (см. GostSettings)."""

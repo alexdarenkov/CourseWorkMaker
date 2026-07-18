@@ -24,7 +24,7 @@ Times New Roman 14 пт; полуторный межстрочный интер�
 шрифта (hhea-метрики), а НЕ 1,5 em. Если метрики сторон разойдутся,
 превью и DOCX перестанут совпадать постранично.
 
-Калибровано по PDF LibreOffice:
+Калибровано по эталонному рендеру Word/LibreOffice:
 
 | Контекст | Шрифт | Высота строки | Превью | DOCX |
 |---|---|---|---|---|
@@ -105,17 +105,6 @@ Times New Roman 14 пт; полуторный межстрочный интер�
 
 - Реализация: `settings.ts`, `gostRender.ts` ↔ `gost.py`
 
-## GL-10. Свой титульник файлом (titleCustom) — `as-built`
-
-Загруженный PDF/DOCX превращается в PNG первой страницы
-(`POST /convert/title-image`: docx→pdf через LibreOffice, pdf→png через
-pdftoppm/poppler). Фронт хранит PNG ассетом в `settings.titleCustom`;
-превью показывает его полностраничной картинкой; DOCX вставляет секцией
-с НУЛЕВЫМИ полями — контент идёт второй секцией с ГОСТ-полями, номер
-страницы в footer второй секции, титул без номера.
-
-- Реализация: конвертер `main.py`/`pdf.py`, `gostRender.ts` ↔ `gost.py`
-
 ## GL-11. Размеры изображений — `as-built`
 
 px→мм по 96 dpi, если плотность не задана явно. PNG без pHYs: python-docx
@@ -134,8 +123,8 @@ k и получает pHYs 96·k dpi (`pngWithDpi` в mermaidRenderer.ts) — к
 
 ## Верификация
 
-- Юнит-тесты: `frontend/src/lib/gostRender.test.ts` ↔
+- Юнит-тесты: `frontend/tests/lib/gostRender.test.ts` ↔
   `services/converter/tests/test_gost_layout.py` (зеркальные пары).
 - Эталонная сверка: фикстура kalman-report (две копии, менять парой) —
-  превью и PDF из DOCX обязаны давать одинаковое число страниц (46)
-  и одинаковые номера в содержании.
+  превью и DOCX (открытый в Word/LibreOffice) обязаны давать одинаковое число
+  страниц (46) и одинаковые номера в содержании.

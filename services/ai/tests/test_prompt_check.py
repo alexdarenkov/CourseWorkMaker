@@ -1,47 +1,10 @@
-"""Смысловая валидация промпта: разбор вердикта модели (fail-open) и эндпоинт."""
+"""Разбор промпта генерации (parse_analysis) и эндпоинт /analyze-prompt (fail-open)."""
 
 from fastapi.testclient import TestClient
 
 from app import config
 from app.main import app
-from app.prompt_check import parse_analysis, parse_verdict
-
-
-# ---------- parse_verdict: чистая логика, без LLM ----------
-
-
-def test_parse_verdict_ok():
-    assert parse_verdict('{"ok": true}') == (True, None)
-
-
-def test_parse_verdict_fail_with_reason():
-    ok, reason = parse_verdict('{"ok": false, "reason": "Это набор букв, а не тема."}')
-    assert ok is False
-    assert reason == "Это набор букв, а не тема."
-
-
-def test_parse_verdict_json_wrapped_in_text():
-    # Модель иногда оборачивает JSON в текст/markdown — выдираем объект.
-    raw = 'Вот ответ:\n```json\n{"ok": false, "reason": "Сформулируйте тему."}\n```'
-    ok, reason = parse_verdict(raw)
-    assert ok is False and reason == "Сформулируйте тему."
-
-
-def test_parse_verdict_fail_open_on_garbage():
-    # Любой непонятный ответ валидатора НЕ блокирует пользователя.
-    for raw in ("", "не знаю", '{"broken": }', '["ok"]', '{"ok": "да"}'):
-        assert parse_verdict(raw) == (True, None)
-
-
-def test_parse_verdict_fail_without_reason_and_long_reason():
-    assert parse_verdict('{"ok": false}') == (False, None)
-    ok, reason = parse_verdict('{"ok": false, "reason": "' + "х" * 500 + '"}')
-    assert ok is False and len(reason) == 300
-
-
-def test_parse_verdict_ok_ignores_reason():
-    # ok=true с reason — причина не нужна.
-    assert parse_verdict('{"ok": true, "reason": "всё хорошо"}') == (True, None)
+from app.prompt_check import parse_analysis
 
 
 # ---------- parse_analysis: разбор промпта генерации ----------
@@ -92,21 +55,3 @@ def test_analyze_endpoint_without_key_is_fail_open(monkeypatch):
     assert d["ok"] is True
     assert d["topic"] == "Курсовая про фильтр Калмана, 20 стр."
     assert d["includeTables"] is None
-
-
-# ---------- эндпоинт ----------
-
-
-def test_validate_prompt_without_key_is_fail_open(monkeypatch):
-    monkeypatch.setattr(config, "AI_API_KEY", "")
-    client = TestClient(app)
-    r = client.post("/validate-prompt", json={"kind": "topic", "text": "фывафыва"})
-    assert r.status_code == 200
-    assert r.json() == {"ok": True, "reason": None}
-
-
-def test_validate_prompt_rejects_bad_kind(monkeypatch):
-    monkeypatch.setattr(config, "AI_API_KEY", "")
-    client = TestClient(app)
-    r = client.post("/validate-prompt", json={"kind": "chat", "text": "тема"})
-    assert r.status_code == 422

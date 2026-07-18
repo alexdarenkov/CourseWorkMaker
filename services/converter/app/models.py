@@ -19,8 +19,6 @@ class GostSettings(CamelModel):
     # низ по центру.
     title_header: str = ""
     title_logo: str = ""
-    # Свой титульник: ключ ассета с картинкой страницы (заменяет блоки ниже).
-    title_custom: str = ""
     title_work: str = ""
     topic: str = ""
     title_people: str = ""

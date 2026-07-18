@@ -8,7 +8,7 @@
  * вёрстку проверяет dev-харнесс preview-test.html в настоящем Chrome.
  */
 import { describe, expect, it } from 'vitest'
-import kalmanReport from '../fixtures/kalman-report.md?raw'
+import kalmanReport from '../../src/fixtures/kalman-report.md?raw'
 import {
   buildTocRow,
   LINE_HEIGHT,
@@ -18,10 +18,10 @@ import {
   renderAll,
   TOC_HEADER_HTML,
   type RenderedBlock,
-} from './gostRender'
-import { parseMD, splitGde, stripHeadingNumber } from './markdown'
-import { pngWithDpi } from './mermaidRenderer'
-import { DEFAULT_SETTINGS } from './settings'
+} from '../../src/lib/gostRender'
+import { parseMD, splitGde, stripHeadingNumber } from '../../src/lib/markdown'
+import { pngWithDpi } from '../../src/lib/mermaidRenderer'
+import { DEFAULT_SETTINGS } from '../../src/lib/settings'
 
 const S = DEFAULT_SETTINGS
 

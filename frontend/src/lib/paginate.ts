@@ -1,4 +1,3 @@
-import { getAsset } from './assets'
 import type { Settings } from './settings'
 import { parseMD } from './markdown'
 import {
@@ -521,15 +520,7 @@ export function paginate(
 
   const all: { html: string; show: boolean }[] = []
   if (s.titlePage) {
-    // Свой титульник (отрендеренная страница PDF/DOCX) — картинкой на весь
-    // лист без полей; иначе — сгенерированный из блоков настроек.
-    const custom = s.titleCustom ? getAsset(s.titleCustom) : null
-    all.push({
-      html: custom
-        ? '<img src="' + custom + '" style="position:absolute;inset:0;width:100%;height:100%" alt="">'
-        : buildTitle(s),
-      show: false,
-    })
+    all.push({ html: buildTitle(s), show: false })
   }
   refPages.forEach((arr) => all.push({ html: arr.join(''), show: true }))
   // Содержание собирается после пагинации контента (номера страниц уже

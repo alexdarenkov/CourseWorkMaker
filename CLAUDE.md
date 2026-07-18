@@ -28,9 +28,10 @@ cd frontend && npm install && npm run dev   # http://localhost:5173, vite про
 # Сборка/тайпчек фронтенда
 cd frontend && npm run build       # tsc -b && vite build
 
-# Тесты фронтенда (vitest + happy-dom: парсер, ГОСТ-рендер, метрики)
+# Тесты фронтенда (vitest + happy-dom + @testing-library) — в frontend/tests/,
+# зеркало src/ (tests/lib, tests/components, tests/hooks). Имена содержат ID пунктов спек.
 cd frontend && npm run test
-# один тест: npm run test -- -t "<название теста>"
+# один тест: npm run test -- -t "<название теста>"   # напр. -t "AI-7"
 
 # Тесты Python-сервисов (гоняются в docker — локальный python может быть старым)
 cd services/converter   # или services/ai (тег образа: cwm-ai)
@@ -44,6 +45,6 @@ Java-сервисы (gateway, auth, document) собираются Gradle'ом �
 
 ## Главные инварианты (детали — в спеках)
 
-1. **Два параллельных рендера ГОСТ.** Превью (`markdown.ts` → `gostRender.ts` → `paginate.ts`) и DOCX (`md_parser.py` → `gost.py`) реализованы дважды и обязаны совпадать вплоть до номеров страниц. Меняя диалект или оформление — правь ОБЕ стороны и тесты обеих сторон (`gostRender.test.ts` ↔ `test_gost_layout.py`). Метрики строк (GL-2) меняются только парой. Фикстура kalman-report существует в двух копиях (`frontend/src/fixtures/` = `services/converter/tests/data/`) — менять только парой. Меняя пагинацию/рендер — прогони все сценарии дев-харнесса `preview-test.html` и сверь паритет страниц с PDF конвертера (`docs/specs/pagination.md`, «Верификация»).
+1. **Два параллельных рендера ГОСТ.** Превью (`markdown.ts` → `gostRender.ts` → `paginate.ts`) и DOCX (`md_parser.py` → `gost.py`) реализованы дважды и обязаны совпадать вплоть до номеров страниц. Меняя диалект или оформление — правь ОБЕ стороны и тесты обеих сторон (`frontend/tests/lib/gostRender.test.ts` ↔ `services/converter/tests/test_gost_layout.py`). Метрики строк (GL-2) меняются только парой. Фикстура kalman-report существует в двух копиях (`frontend/src/fixtures/` = `services/converter/tests/data/`) — менять только парой. Меняя пагинацию/рендер — прогони все сценарии дев-харнесса `preview-test.html` и сверь паритет страниц с DOCX конвертера, открытым в Word/LibreOffice (`docs/specs/pagination.md`, «Верификация»).
 2. **Безопасность (SEC-1).** JWT проверяет только gateway; внутрь идёт `X-User-Id`, клиентские `X-User-*` всегда вырезаются на шлюзе; каждый новый маршрут gateway обязан это соблюдать.
 3. **Overlay-подсветка редактора.** `<textarea>` и слой `<pre>` обязаны переносить строки одинаково: в стилях токенов только цвет/фон/border-radius (`docs/architecture/overview.md`, «Frontend: ключевые модули»).

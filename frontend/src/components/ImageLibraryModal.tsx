@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { listAssets, removeAsset } from '../lib/assets'
-import { CloseIcon, ImageIcon, TrashIcon } from './icons'
+import { ImageIcon, TrashIcon } from './icons'
+import { ModalCloseButton, ModalShell } from './ui'
 
 interface ImageLibraryModalProps {
   /** Текущий markdown — чтобы пометить используемые картинки. */
@@ -38,22 +39,7 @@ export function ImageLibraryModal({ md, onInsert, onClose, onToast }: ImageLibra
   }
 
   return (
-    <div
-      onClick={onClose}
-      className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'var(--overlay)', backdropFilter: 'blur(3px)' }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="animate-pop-in flex flex-col overflow-hidden bg-surface text-ink"
-        style={{
-          width: 640,
-          maxWidth: 'calc(100vw - 48px)',
-          maxHeight: '80vh',
-          borderRadius: 18,
-          boxShadow: '0 24px 64px rgba(61,57,41,.28)',
-        }}
-      >
+    <ModalShell onClose={onClose} width={640} maxHeight="80vh">
         <div className="flex items-center gap-2.5 px-[22px] pb-2 pt-[18px]">
           <span className="text-soft">
             <ImageIcon size={17} />
@@ -61,13 +47,7 @@ export function ImageLibraryModal({ md, onInsert, onClose, onToast }: ImageLibra
           <div className="text-[16.5px] font-bold tracking-tight">Библиотека картинок</div>
           <span className="text-[12px] text-muted">{items.length} шт.</span>
           <div className="flex-1" />
-          <button
-            onClick={onClose}
-            title="Закрыть"
-            className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-full border-none bg-hover text-soft hover:bg-hover-2"
-          >
-            <CloseIcon />
-          </button>
+          <ModalCloseButton onClose={onClose} />
         </div>
         <div className="px-[22px] pb-2 text-xs text-muted">
           Клик по картинке вставляет её в текст на позицию курсора. Сюда попадают картинки с
@@ -123,7 +103,6 @@ export function ImageLibraryModal({ md, onInsert, onClose, onToast }: ImageLibra
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

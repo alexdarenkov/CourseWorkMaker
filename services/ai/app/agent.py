@@ -80,14 +80,6 @@ class EditOptions(BaseModel):
     markdown: str = Field(min_length=1, max_length=300_000)
 
 
-class SectionEditOptions(BaseModel):
-    """Правка ОДНОГО раздела: дешевле и безопаснее, чем переписывать весь документ."""
-
-    instruction: str = Field(min_length=3, max_length=4000)
-    section_title: str = Field(min_length=1, max_length=300)
-    markdown: str = Field(min_length=1, max_length=300_000)
-
-
 class OutlineSection(BaseModel):
     title: str
     subsections: list[str] = []
@@ -359,80 +351,6 @@ def lint_document(document: str, opts: GenerationOptions) -> list[str]:
     return issues
 
 
-def split_sections(document: str) -> list[tuple[str | None, str]]:
-    """Режет документ по заголовкам 1-го уровня (вне код-фенсов).
-
-    Возвращает [(заголовок, текст-раздела-с-заголовком), …]; у преамбулы до
-    первого `#` заголовок None.
-    """
-    parts: list[tuple[str | None, str]] = []
-    cur_title: str | None = None
-    cur: list[str] = []
-    in_code = False
-    for line in document.split("\n"):
-        if line.strip().startswith("```"):
-            in_code = not in_code
-        m = None if in_code else re.match(r"^#\s+(.+?)\s*$", line)
-        if m:
-            if cur or cur_title is not None:
-                parts.append((cur_title, "\n".join(cur)))
-            cur_title = m.group(1)
-            cur = [line]
-        else:
-            cur.append(line)
-    parts.append((cur_title, "\n".join(cur)))
-    return parts
-
-
-def replace_section(document: str, title: str, new_text: str) -> str:
-    """Заменяет раздел с заголовком `title` на `new_text` (регистронезависимо).
-
-    Бросает ValueError, если раздела нет. Между разделами нормализуется одна
-    пустая строка — как их и собирает генерация.
-    """
-    wanted = title.strip().lower()
-    out: list[str] = []
-    replaced = False
-    for t, text in split_sections(document):
-        if not replaced and t is not None and t.strip().lower() == wanted:
-            out.append(new_text.strip())
-            replaced = True
-        else:
-            out.append(text.strip("\n"))
-    if not replaced:
-        raise ValueError(f"Раздел «{title}» не найден в документе")
-    return "\n\n".join(p for p in out if p.strip())
-
-
-def lint_user_document(document: str) -> list[str]:
-    """Нормоконтроль документа пользователя (кнопка «Проверить» в редакторе).
-
-    В отличие от lint_document, не знает настроек генерации и не ограничивает
-    иллюстрации: проверяются только требования оформления, которые пользователь
-    может нарушить в своём тексте. Работает без LLM и без AI_API_KEY.
-    """
-    issues: list[str] = []
-    if not re.search(r"^# Введение\s*$", document, re.MULTILINE | re.IGNORECASE):
-        issues.append("Нет раздела «# Введение» — по ГОСТ 7.32-2017 он обязателен")
-    if not re.search(r"^# Заключение\s*$", document, re.MULTILINE | re.IGNORECASE):
-        issues.append("Нет раздела «# Заключение» — по ГОСТ 7.32-2017 он обязателен")
-    if not re.search(r"^# Список", document, re.MULTILINE | re.IGNORECASE):
-        issues.append("Нет раздела «# Список использованных источников»")
-    issues.extend(_lint_captions(document))
-    issues.extend(_lint_citations(document))
-    issues.extend(_lint_oversized(document))
-    if re.search(r"^#{4,}\s", document, re.MULTILINE):
-        issues.append("Заголовки 4-го уровня и глубже не нумеруются по ГОСТ — будут показаны как уровень 3")
-    if re.search(r"^#{1,3}\s+\d", document, re.MULTILINE):
-        issues.append("В заголовках есть ручные номера — они будут срезаны, нумерация автоматическая")
-    if "```matplotlib" in document:
-        issues.append(
-            "Блок ```matplotlib — служебный формат ИИ-генерации: в превью и DOCX "
-            "он попадёт как листинг кода, а не как график"
-        )
-    return issues
-
-
 def strip_fences(text: str) -> str:
     """Срезает обрамляющий ```markdown-фенс, если модель завернула в него ответ."""
     t = text.strip()
@@ -578,48 +496,6 @@ class CourseworkAgent:
         if not fixed.strip():
             raise ValueError("Модель вернула пустой документ — правка не применена")
         return fixed.strip() + "\n"
-
-    async def edit_section(self, opts: SectionEditOptions, progress: ProgressCb) -> str:
-        """Переписывает один раздел документа по инструкции пользователя.
-
-        Модели отправляется только план (заголовки) и текст целевого раздела —
-        это в разы дешевле правки всего документа и не даёт модели «улучшить»
-        соседние разделы. Результат подшивается на место программно.
-        """
-        sections = split_sections(opts.markdown)
-        wanted = opts.section_title.strip().lower()
-        target = next(
-            (text for t, text in sections if t is not None and t.strip().lower() == wanted),
-            None,
-        )
-        if target is None:
-            raise ValueError(f"Раздел «{opts.section_title}» не найден в документе")
-        plan = "\n".join(f"- {t}" for t, _ in sections if t is not None)
-
-        await progress(f"Правка раздела «{opts.section_title}»", 0.2)
-        system = f"""Ты — редактор курсовых работ. Тебе дан ОДИН раздел работы и запрос студента.
-Перепиши только этот раздел согласно запросу, сохраняя его роль в структуре работы.
-{MD_DIALECT}
-
-{STYLE_RULES}
-
-Верни ТОЛЬКО итоговый markdown раздела целиком, начиная со строки `# {opts.section_title}`,
-без комментариев и без обрамляющих ```."""
-        user = f"""Полный план работы (для контекста, эти разделы не трогай):
-{plan}
-
-Запрос студента: {opts.instruction}
-
-Текущий текст раздела:
-{target}"""
-        resp = await self.checker.ainvoke(
-            [SystemMessage(content=system), HumanMessage(content=user)]
-        )
-        await progress("Сборка документа", 0.85)
-        fixed = ensure_single_heading(strip_fences(resp.content), opts.section_title)
-        if len(fixed.strip()) < 20:
-            raise ValueError("Модель вернула пустой раздел — правка не применена")
-        return replace_section(opts.markdown, opts.section_title, fixed).strip() + "\n"
 
     # ---------- шаги ----------
 

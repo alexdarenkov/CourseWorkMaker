@@ -18,15 +18,10 @@ export interface Settings {
   topic: string
   titlePeople: string
   titleBottom: string
-  /** Свой титульник: ключ asset-картинки (первая страница загруженного
-   *  PDF/DOCX, отрендеренная сервером). Заменяет блоки выше целиком. */
-  titleCustom: string
   /** Целевой объём работы в страницах — прогресс показывается в статус-баре. */
   targetPages: number
   /** 'auto' — следовать системной теме. */
   theme: 'light' | 'dark' | 'auto'
-  /** Показывать diff ИИ-правки перед применением (выкл — применять сразу). */
-  showDiff: boolean
   fontSize: number
   wordWrap: boolean
   lineNumbers: boolean
@@ -50,10 +45,8 @@ export const DEFAULT_SETTINGS: Settings = {
   titlePeople:
     'Выполнил: студент группы ИВТ-21\nСмирнова Анна Дмитриевна\n\nРуководитель: доц., канд. техн. наук Петров В. Н.',
   titleBottom: 'Москва, ' + String(new Date().getFullYear()),
-  titleCustom: '',
   targetPages: 15,
   theme: 'light',
-  showDiff: true,
   fontSize: 14,
   // Перенос строк выключен по умолчанию: при переносе невидимая textarea и
   // подсвеченный pre-слой разбивают длинные строки разными движками, из-за чего
@@ -98,7 +91,6 @@ export function migrateSettings(raw: Record<string, unknown>): Record<string, un
 /** Поля настроек, не требующие перепагинации превью. */
 export const EDITOR_ONLY_KEYS: (keyof Settings)[] = [
   'theme',
-  'showDiff',
   'fontSize',
   'wordWrap',
   'lineNumbers',

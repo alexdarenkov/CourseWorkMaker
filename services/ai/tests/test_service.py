@@ -31,26 +31,13 @@ def test_generate_invalid_options_returns_422(monkeypatch):
     assert resp.status_code == 422
 
 
-def test_edit_section_unconfigured_returns_503(monkeypatch):
+def test_edit_unconfigured_returns_503(monkeypatch):
     monkeypatch.setattr(config, "AI_API_KEY", "")
     resp = client.post(
-        "/edit-section",
-        json={"instruction": "переработай", "section_title": "Анализ", "markdown": "# Анализ\n\nТекст."},
+        "/edit",
+        json={"instruction": "сделай введение подробнее", "markdown": "# Введение\n\nТекст."},
     )
     assert resp.status_code == 503
-
-
-def test_lint_endpoint_works_without_api_key(monkeypatch):
-    monkeypatch.setattr(config, "AI_API_KEY", "")
-    resp = client.post("/lint", json={"markdown": "# Анализ\n\nТекст."})
-    assert resp.status_code == 200
-    issues = resp.json()["issues"]
-    assert any("Введение" in i for i in issues)
-
-
-def test_lint_endpoint_validates_empty_markdown():
-    resp = client.post("/lint", json={"markdown": ""})
-    assert resp.status_code == 422
 
 
 def test_job_status_not_found():

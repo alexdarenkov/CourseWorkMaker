@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { authApi } from '../api'
 import { useAuth } from '../auth/AuthContext'
 import { saveToken } from '../lib/storage'
-import { CloseIcon } from './icons'
-import { TextField } from './ui'
+import { ModalCloseButton, ModalShell, TextField } from './ui'
 
 interface UserModalProps {
   onClose: () => void
@@ -51,22 +50,7 @@ export function UserModal({ onClose, onToast }: UserModalProps) {
   }
 
   return (
-    <div
-      onClick={onClose}
-      className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'var(--overlay)', backdropFilter: 'blur(3px)' }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="animate-pop-in overflow-y-auto bg-surface text-ink p-[22px]"
-        style={{
-          width: 440,
-          maxWidth: 'calc(100vw - 48px)',
-          maxHeight: '84vh',
-          borderRadius: 18,
-          boxShadow: '0 24px 64px rgba(61,57,41,.28)',
-        }}
-      >
+    <ModalShell onClose={onClose} width={440} maxHeight="84vh" panelClassName="overflow-y-auto p-[22px]">
         <div className="flex items-center gap-3.5">
           <div
             className="flex items-center justify-center rounded-full text-lg font-bold tracking-wide"
@@ -79,13 +63,7 @@ export function UserModal({ onClose, onToast }: UserModalProps) {
             <div className="truncate text-[12.5px] text-muted">{user.email}</div>
           </div>
           <div className="flex-1" />
-          <button
-            onClick={onClose}
-            title="Закрыть"
-            className="flex h-[30px] w-[30px] flex-shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-hover text-soft hover:bg-hover-2"
-          >
-            <CloseIcon />
-          </button>
+          <ModalCloseButton onClose={onClose} />
         </div>
 
         <div className="flex flex-col gap-3 pt-5">
@@ -138,7 +116,6 @@ export function UserModal({ onClose, onToast }: UserModalProps) {
             {busy ? 'Сохраняем…' : 'Сохранить'}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { documentsApi, DocumentDto, DocumentMeta } from '../api'
-import { CloseIcon, PlusIcon, TrashIcon } from './icons'
+import { PlusIcon, TrashIcon } from './icons'
+import { ModalCloseButton, ModalShell } from './ui'
 
 interface DocsModalProps {
   /** id открытого сейчас документа (подсвечивается в списке). */
@@ -77,32 +78,11 @@ export function DocsModal(props: DocsModalProps) {
   }
 
   return (
-    <div
-      onClick={props.onClose}
-      className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'var(--overlay)', backdropFilter: 'blur(3px)' }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="animate-pop-in flex flex-col overflow-hidden bg-surface text-ink"
-        style={{
-          width: 520,
-          maxWidth: 'calc(100vw - 48px)',
-          maxHeight: '76vh',
-          borderRadius: 18,
-          boxShadow: '0 24px 64px rgba(61,57,41,.28)',
-        }}
-      >
+    <ModalShell onClose={props.onClose} width={520} maxHeight="76vh">
         <div className="flex items-center px-[22px] pb-3.5 pt-[18px]">
           <div className="text-[16.5px] font-bold tracking-tight">Мои документы</div>
           <div className="flex-1" />
-          <button
-            onClick={props.onClose}
-            title="Закрыть"
-            className="flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-full border-none bg-hover text-soft hover:bg-hover-2"
-          >
-            <CloseIcon />
-          </button>
+          <ModalCloseButton onClose={props.onClose} />
         </div>
         <div className="flex-1 overflow-y-auto px-[14px] pb-2">
           {docs === null && (
@@ -153,7 +133,6 @@ export function DocsModal(props: DocsModalProps) {
             <span>Новая работа</span>
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }

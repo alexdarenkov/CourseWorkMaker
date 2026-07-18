@@ -29,21 +29,16 @@
 | Метод | Путь | Описание |
 |-------|------|----------|
 | `POST` | `/api/convert/docx` | `{markdown, docName, settings, assets}` → файл .docx |
-| `POST` | `/api/convert/pdf` | то же тело → файл .pdf (LibreOffice, содержание заполнено реальными номерами) |
-| `POST` | `/api/convert/title-image` | multipart `file` (PDF/DOCX) → `{image}` — PNG первой страницы (GL-10) |
 
 ## ИИ (`/api/ai` → ai-service `/`)
 
 | Метод | Путь | Описание |
 |-------|------|----------|
 | `POST` | `/api/ai/generate` | multipart: `options` (JSON) + `files[]` → `{jobId}` (AI-1..AI-4) |
-| `POST` | `/api/ai/edit` | `{instruction, markdown}` → `{jobId}` — правка документа (AI-6) |
-| `POST` | `/api/ai/edit-section` | `{instruction, section_title, markdown}` → `{jobId}`; из UI не вызывается |
+| `POST` | `/api/ai/edit` | `{instruction, markdown}` → `{jobId}` — правка всего документа, результат применяется сразу (AI-6) |
 | `GET` | `/api/ai/jobs/{id}` | Статус/прогресс/результат; `partial` — стриминг (AI-5) |
 | `POST` | `/api/ai/jobs/{id}/cancel` | Отмена задачи |
 | `GET` | `/api/ai/pricing` | Цены уровней качества (₽ за млн токенов) |
-| `POST` | `/api/ai/lint` | `{markdown, check_urls?}` → `{issues}` — нормоконтроль без LLM (AI-8), работает без `AI_API_KEY` |
-| `POST` | `/api/ai/validate-prompt` | `{ok, reason}` — проверка промпта правки (AI-9), fail-open |
 | `POST` | `/api/ai/analyze-prompt` | Валидация промпта генерации + извлечение темы/требований/target_pages/include_* (AI-9), fail-open |
 
 Служебное: `GET /health` у обоих Python-сервисов (в gateway не маршрутизируется).

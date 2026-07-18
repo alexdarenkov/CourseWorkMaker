@@ -1,4 +1,57 @@
 import { InputHTMLAttributes, ReactNode } from 'react'
+import { CloseIcon } from './icons'
+
+/** Каркас модального окна: оверлей с блюром (клик — закрыть) + панель
+ *  (клик не всплывает). Классы и тени едины для всех модалок приложения. */
+export function ModalShell({
+  onClose,
+  width,
+  maxHeight,
+  panelClassName = 'flex flex-col overflow-hidden',
+  children,
+}: {
+  onClose: () => void
+  width: number
+  maxHeight: string
+  /** Раскладка панели; по умолчанию — колонка со скроллом внутри. */
+  panelClassName?: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      onClick={onClose}
+      className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: 'var(--overlay)', backdropFilter: 'blur(3px)' }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={'animate-pop-in bg-surface text-ink ' + panelClassName}
+        style={{
+          width,
+          maxWidth: 'calc(100vw - 48px)',
+          maxHeight,
+          borderRadius: 18,
+          boxShadow: '0 24px 64px rgba(61,57,41,.28)',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** Круглая кнопка-крестик в шапке модалки. */
+export function ModalCloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      onClick={onClose}
+      title="Закрыть"
+      className="flex h-[30px] w-[30px] flex-shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-hover text-soft hover:bg-hover-2"
+    >
+      <CloseIcon />
+    </button>
+  )
+}
 
 export function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (

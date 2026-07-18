@@ -12,11 +12,8 @@ from app.agent import (
     ensure_single_heading,
     extract_json,
     lint_document,
-    lint_user_document,
     normalize_outline,
-    replace_section,
     section_word_target,
-    split_sections,
     strip_fences,
     summarize_section,
 )
@@ -249,52 +246,6 @@ def test_lint_deep_and_numbered_headings():
     assert "4-го уровня" in joined and "ручные номера" in joined.lower()
 
 
-# ---------- split_sections / replace_section ----------
-
-SECTIONED = """# Введение
-
-Вводный текст.
-
-# Анализ
-
-Текст анализа.
-
-```python
-# это комментарий в коде, а не заголовок
-```
-
-# Заключение
-
-Выводы.
-"""
-
-
-def test_split_sections_titles_and_bodies():
-    parts = split_sections(SECTIONED)
-    assert [t for t, _ in parts] == ["Введение", "Анализ", "Заключение"]
-    analysis = parts[1][1]
-    assert "Текст анализа." in analysis
-    assert "# это комментарий" in analysis  # заголовок в коде не режет раздел
-
-
-def test_split_sections_preamble_without_heading():
-    parts = split_sections("Преамбула без заголовка.\n\n# Раздел\n\nТекст.")
-    assert parts[0][0] is None
-    assert parts[1][0] == "Раздел"
-
-
-def test_replace_section_swaps_only_target():
-    out = replace_section(SECTIONED, "анализ", "# Анализ\n\nНовый текст раздела.")
-    assert "Новый текст раздела." in out
-    assert "Текст анализа." not in out
-    assert "Вводный текст." in out and "Выводы." in out
-
-
-def test_replace_section_missing_raises():
-    with pytest.raises(ValueError):
-        replace_section(SECTIONED, "Несуществующий раздел", "# Х\n\nТекст.")
-
-
 # ---------- _lint_oversized (габариты таблиц и схем) ----------
 
 def _wide_table_md(cols: int) -> str:
@@ -308,7 +259,6 @@ def test_lint_wide_table_flagged():
     doc = GOOD_DOC + "\n" + _wide_table_md(12)
     issues = lint_document(doc, opts())
     assert any("12 колонок" in i for i in issues)
-    assert any("12 колонок" in i for i in lint_user_document(doc))
 
 
 def test_lint_normal_table_not_flagged():
@@ -319,40 +269,16 @@ def test_lint_normal_table_not_flagged():
 
 def test_lint_wide_table_inside_code_ignored():
     fake = "```\n| " + " | ".join("К" for _ in range(20)) + " |\n```\n"
-    assert not any("колонок" in i for i in lint_user_document(GOOD_DOC + "\n" + fake))
+    assert not any("колонок" in i for i in lint_document(GOOD_DOC + "\n" + fake, opts()))
 
 
 def test_lint_huge_mermaid_flagged():
     nodes = "\n".join(f"  A{i} --> A{i + 1}" for i in range(25))
     doc = GOOD_DOC + f"\nРисунок: Схема-гигант\n```mermaid\nflowchart TD\n{nodes}\n```\n"
-    issues = lint_user_document(doc)
+    issues = lint_document(doc, opts())
     assert any("нечитаемой" in i for i in issues)
     # Компактная схема из GOOD_DOC замечаний не вызывает.
-    assert not any("нечитаемой" in i for i in lint_user_document(GOOD_DOC))
-
-
-# ---------- lint_user_document (нормоконтроль в редакторе) ----------
-
-def test_user_lint_clean_document():
-    assert lint_user_document(GOOD_DOC) == []
-
-
-def test_user_lint_allows_any_images_and_formulas():
-    # Пользовательский нормоконтроль не знает настроек генерации — картинки,
-    # локальные ассеты и формулы не считаются нарушением.
-    doc = GOOD_DOC + "\n![Фото](asset:img-abc)\n\n$$E = mc^2$$\n"
-    assert lint_user_document(doc) == []
-
-
-def test_user_lint_flags_matplotlib_block():
-    doc = GOOD_DOC + "\n```matplotlib\nplt.plot([1])\n```\n"
-    assert any("matplotlib" in i for i in lint_user_document(doc))
-
-
-def test_user_lint_missing_sections_and_captions():
-    issues = lint_user_document("# Анализ\n\n| А |\n|---|\n| 1 |\n")
-    joined = " ".join(issues)
-    assert "Введение" in joined and "Таблица" in joined
+    assert not any("нечитаемой" in i for i in lint_document(GOOD_DOC, opts()))
 
 
 # ---------- summarize_section ----------

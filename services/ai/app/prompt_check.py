@@ -12,57 +12,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from . import config
 
 log = logging.getLogger(__name__)
-
-PromptKind = Literal["topic", "edit"]
-
-_SYSTEM_TOPIC = """Ты — проверяющий ввода для генератора курсовых работ. Оцени, является ли текст пользователя осмысленной ТЕМОЙ учебной/курсовой работы или отчёта (любая дисциплина, любой уровень детализации).
-
-НЕ считается темой: бессмысленный набор букв или слов («фывафыва», «qwerty», «привет привет»), случайные символы, приветствия и болтовня с ботом, отдельные команды («скачай», «сделай красиво»), одни числа, оскорбления.
-
-Ответь СТРОГО одним JSON-объектом без пояснений и без markdown:
-{"ok": true}
-или
-{"ok": false, "reason": "<одно короткое предложение по-русски: что не так и как сформулировать тему>"}"""
-
-_SYSTEM_EDIT = """Ты — проверяющий ввода для ИИ-редактора курсовой работы. Оцени, является ли текст пользователя осмысленной ИНСТРУКЦИЕЙ ПРАВКИ документа: что изменить, добавить, убрать, переписать, сократить, расширить и т. п.
-
-НЕ считается инструкцией: бессмысленный набор букв или символов, приветствия и болтовня, вопросы не про документ, пустые фразы без сути («сделай нормально» — слишком пусто, непонятно ЧТО менять).
-
-Ответь СТРОГО одним JSON-объектом без пояснений и без markdown:
-{"ok": true}
-или
-{"ok": false, "reason": "<одно короткое предложение по-русски: что не так и как сформулировать правку>"}"""
-
-
-def parse_verdict(raw: str) -> tuple[bool, str | None]:
-    """Разбирает ответ модели. Любой непонятный ответ — fail-open (ok=True):
-    валидатор не имеет права блокировать пользователя из-за своих сбоев."""
-    m = re.search(r"\{.*\}", raw or "", re.S)
-    if not m:
-        return True, None
-    try:
-        data = json.loads(m.group(0))
-    except (json.JSONDecodeError, ValueError):
-        return True, None
-    if not isinstance(data, dict):
-        return True, None
-    ok = data.get("ok")
-    if not isinstance(ok, bool):
-        return True, None
-    reason = data.get("reason")
-    if not isinstance(reason, str) or not reason.strip():
-        reason = None
-    else:
-        reason = reason.strip()[:300]
-    return ok, (None if ok else reason)
-
 
 _SYSTEM_ANALYZE = """Ты — приёмщик заявок генератора курсовых работ. Пользователь пишет ОДИН промпт, в котором может быть и тема работы, и требования (объём в страницах, что включить/исключить, пожелания методички).
 
@@ -156,22 +111,3 @@ async def analyze_prompt(text: str) -> dict:
     except Exception:
         log.warning("Анализатор промпта недоступен — используем промпт как тему", exc_info=True)
         return parse_analysis("", fallback_topic)
-
-
-async def check_prompt(kind: PromptKind, text: str) -> tuple[bool, str | None]:
-    """Спрашивает быструю модель, осмыслен ли промпт. Fail-open при сбоях."""
-    # Импорт здесь, а не на уровне модуля: parse_verdict остаётся тестируемым
-    # без langchain_openai/сети (тесты чистой логики).
-    from .agent import _build_llm
-
-    try:
-        llm = _build_llm(temperature=0.0, model=config.AI_MODEL_FAST)
-        system = _SYSTEM_TOPIC if kind == "topic" else _SYSTEM_EDIT
-        resp = await llm.ainvoke(
-            [SystemMessage(content=system), HumanMessage(content=text[:2000])]
-        )
-        content = resp.content if isinstance(resp.content, str) else str(resp.content)
-        return parse_verdict(content)
-    except Exception:
-        log.warning("Валидатор промпта недоступен — пропускаем без проверки", exc_info=True)
-        return True, None

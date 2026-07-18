@@ -10,7 +10,6 @@
 
 import './index.css'
 import kalmanReportMd from './fixtures/kalman-report.md?raw'
-import { addRawAsset } from './lib/assets'
 import { LINE_HEIGHT } from './lib/gostRender'
 import { paginate } from './lib/paginate'
 import { DEFAULT_SETTINGS } from './lib/settings'
@@ -166,15 +165,6 @@ async function run() {
   const md = DOCS[name] || DOCS.mixed
   let titleOverride: Partial<typeof DEFAULT_SETTINGS> = {}
   if (params.get('title') === 'mai') titleOverride = MAI_TITLE
-  // «Свой титульник»: полностраничная картинка-заглушка вместо конструктора.
-  if (params.get('title') === 'custom') {
-    const svg =
-      'data:image/svg+xml;charset=utf-8,' +
-      encodeURIComponent(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="794" height="1123"><rect width="794" height="1123" fill="#eef4fa"/><rect x="40" y="40" width="714" height="1043" fill="none" stroke="#0d8fd6" stroke-width="6"/><text x="397" y="540" font-size="40" text-anchor="middle" fill="#0d8fd6">ЗАГРУЖЕННЫЙ ТИТУЛЬНИК</text><text x="397" y="600" font-size="24" text-anchor="middle" fill="#5a7a94">(страница из PDF/DOCX пользователя)</text></svg>',
-      )
-    titleOverride = { titleCustom: addRawAsset(svg, 'title') }
-  }
   let pages = paginate(md, { ...DEFAULT_SETTINGS, ...titleOverride }, () => null)
   if (only) pages = pages.filter((_, i) => i + 1 === only)
   const root = document.getElementById('root')!

@@ -12,13 +12,10 @@ from .agent import (
     CourseworkAgent,
     EditOptions,
     GenerationOptions,
-    SectionEditOptions,
-    lint_user_document,
 )
 from .files import build_context
 from .jobs import Job, store
-from .prompt_check import PromptKind, analyze_prompt as run_prompt_analysis, check_prompt
-from .sources import check_bibliography_urls
+from .prompt_check import analyze_prompt as run_prompt_analysis
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -60,23 +57,6 @@ async def generate(
     return {"jobId": job.id}
 
 
-class ValidatePromptRequest(BaseModel):
-    # topic — тема новой работы, edit — инструкция правки документа.
-    kind: PromptKind
-    text: str = Field(min_length=1, max_length=8000)
-
-
-@app.post("/validate-prompt")
-async def validate_prompt(req: ValidatePromptRequest) -> dict:
-    """Смысловая проверка промпта быстрой моделью ДО запуска конвейера.
-    Fail-open: без ключа или при сбое валидатора промпт пропускается —
-    настоящая генерация всё равно вернёт свою ошибку, если что не так."""
-    if not config.AI_API_KEY:
-        return {"ok": True, "reason": None}
-    ok, reason = await check_prompt(req.kind, req.text)
-    return {"ok": ok, "reason": reason}
-
-
 class AnalyzePromptRequest(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
 
@@ -105,27 +85,6 @@ async def analyze_prompt(req: AnalyzePromptRequest) -> dict:
         "includeCodeAppendix": a.get("include_code_appendix"),
         "includeBibliography": a.get("include_bibliography"),
     }
-
-
-class LintRequest(BaseModel):
-    markdown: str = Field(min_length=1, max_length=2_000_000)
-    # Дополнительно проверять доступность URL источников (сетевые запросы,
-    # занимает до ~6 секунд).
-    check_urls: bool = False
-
-
-@app.post("/lint")
-async def lint(req: LintRequest) -> dict:
-    """Нормоконтроль текущего документа. Проверка правил — без LLM (работает
-    и без AI_API_KEY); опционально проверяются ссылки списка источников."""
-    issues = lint_user_document(req.markdown)
-    if req.check_urls:
-        try:
-            issues += await check_bibliography_urls(req.markdown)
-        except Exception:
-            log.exception("URL check failed")
-            issues.append("Не удалось проверить ссылки источников — попробуйте позже")
-    return {"issues": issues}
 
 
 _pricing_cache: dict = {"ts": 0.0, "data": None}
@@ -184,21 +143,6 @@ async def edit(opts: EditOptions, x_user_id: str = Header(default="anonymous")) 
     return {"jobId": job.id}
 
 
-@app.post("/edit-section")
-async def edit_section(
-    opts: SectionEditOptions, x_user_id: str = Header(default="anonymous")
-) -> dict:
-    """Правка одного раздела (дешевле и точечнее, чем /edit всего документа)."""
-    if not config.AI_API_KEY:
-        raise HTTPException(503, "ИИ-сервис не сконфигурирован: задайте AI_API_KEY")
-    if store.has_active(x_user_id):
-        raise HTTPException(429, "У вас уже выполняется задача — дождитесь завершения")
-
-    job = store.create(x_user_id)
-    job.task = asyncio.create_task(_run_section_job(job, opts))
-    return {"jobId": job.id}
-
-
 @app.get("/jobs/{job_id}")
 def job_status(job_id: str, x_user_id: str = Header(default="anonymous")) -> dict:
     job = store.get(job_id)
@@ -219,13 +163,6 @@ def job_status(job_id: str, x_user_id: str = Header(default="anonymous")) -> dic
 async def _run_edit_job(job: Job, opts: EditOptions) -> None:
     agent = CourseworkAgent("balanced")
     await _run_agent_task(job, "Применение правок", lambda p: agent.edit(opts, p))
-
-
-async def _run_section_job(job: Job, opts: SectionEditOptions) -> None:
-    agent = CourseworkAgent("balanced")
-    await _run_agent_task(
-        job, "Правка раздела", lambda p: agent.edit_section(opts, p)
-    )
 
 
 async def _run_agent_task(job: Job, start_stage: str, task) -> None:

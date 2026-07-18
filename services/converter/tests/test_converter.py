@@ -266,62 +266,6 @@ def test_formula_keeps_with_gde():
     assert formula_p2.paragraph_format.keep_with_next is None
 
 
-# Прозрачный PNG 1×1 — достаточен для проверки встраивания картинок.
-TINY_PNG = (
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
-    "AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-)
-
-
-def test_custom_title_page_full_bleed():
-    # Свой титульник: первая секция без полей с картинкой на весь лист,
-    # контент — во второй секции с ГОСТ-полями.
-    data = build_docx(
-        "# Введение\n\nТекст.",
-        GostSettings(toc=False, title_custom="asset:title"),
-        {"asset:title": TINY_PNG},
-    )
-    doc = Document(io.BytesIO(data))
-    assert len(doc.sections) == 2
-    assert doc.sections[0].left_margin.mm == 0
-    assert round(doc.sections[1].left_margin.mm) == 30
-    assert len(doc.inline_shapes) == 1
-
-
-def test_custom_title_fallback_to_generated():
-    # Битая картинка титульника → откат на сгенерированный титульник.
-    data = build_docx(
-        "# Введение\n\nТекст.",
-        GostSettings(toc=False, title_custom="asset:title", title_work="КУРСОВАЯ РАБОТА"),
-        {"asset:title": "data:image/png;base64,не-картинка"},
-    )
-    doc = Document(io.BytesIO(data))
-    assert len(doc.sections) == 1
-    assert "КУРСОВАЯ РАБОТА" in "\n".join(p.text for p in doc.paragraphs)
-
-
-def test_pdf_first_page_png():
-    from app.pdf import docx_to_pdf, pdf_first_page_png
-
-    data = build_docx("# Введение\n\nТекст.", GostSettings(title_page=False, toc=False), {})
-    png = pdf_first_page_png(docx_to_pdf(data))
-    assert png[:8] == b"\x89PNG\r\n\x1a\n"
-
-
-def test_docx_to_pdf_smoke():
-    # LibreOffice в образе: DOCX → PDF, на выходе валидная PDF-сигнатура.
-    from app.pdf import docx_to_pdf
-
-    data = build_docx(
-        "# Введение\n\nАбзац текста для PDF.",
-        GostSettings(title_page=False, toc=False),
-        {},
-    )
-    pdf = docx_to_pdf(data)
-    assert pdf[:5] == b"%PDF-"
-    assert len(pdf) > 1000
-
-
 def test_build_docx_no_extras():
     settings = GostSettings(
         title_page=False, toc=False, page_numbers=False,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { aiApi, AiJob, AiQuality } from '../api'
+import { applyPromptAnalysis, buildGenerateOptions } from '../lib/aiPrompt'
 import { SAMPLE_MD } from '../lib/sample'
 import {
   ArrowUpIcon,
@@ -34,8 +35,8 @@ const COLLAPSE_KEY = 'md2docx:aiConsoleCollapsed'
 
 type Mode = 'new' | 'edit'
 
-/** Проверка промпта ДО отправки: пустышки и мусор не уходят на бэкенд. */
-function validatePrompt(text: string, mode: Mode, docEmpty: boolean): string | null {
+/** Проверка промпта ДО отправки: пустышки и мусор не уходят на бэкенд (AI-9). */
+export function validatePrompt(text: string, mode: Mode, docEmpty: boolean): string | null {
   const t = text.trim()
   if (mode === 'edit' && docEmpty) {
     return 'Документ пуст — исправлять нечего. Переключитесь на «Новый отчёт».'
@@ -59,7 +60,7 @@ function validatePrompt(text: string, mode: Mode, docEmpty: boolean): string | n
  * Без рамки и без чата — весь вывод агента идёт ТОЛЬКО в редактор (md),
  * ошибки — тостами, статус задачи — строкой прогресса. Режим выбирается
  * явно: «Новый отчёт» (генерация по теме) / «Правка» (инструкция к текущему
- * документу, с diff-просмотром). Сворачивается кнопкой «Скрыть».
+ * документу — результат применяется сразу). Сворачивается кнопкой «Скрыть».
  */
 export function AiConsole({
   currentMd,
@@ -133,26 +134,24 @@ export function AiConsole({
           setStarting(false)
           return
         }
-        const pagesNext = a?.targetPages ?? pages
-        const bibNext = a?.includeBibliography ?? bib
-        const tablesNext = a?.includeTables ?? tables
-        const diagramsNext = a?.includeDiagrams ?? diagrams
-        const formulasNext = a?.includeFormulas ?? formulas
-        const imagesNext = a?.includeImages ?? images
-        const webImagesNext = a?.includeWebImages ?? webImages
-        const codeNext = a?.includeCodeAppendix ?? codeAppendix
-        const touched =
-          pagesNext !== pages || bibNext !== bib || tablesNext !== tables ||
-          diagramsNext !== diagrams || formulasNext !== formulas || imagesNext !== images ||
-          webImagesNext !== webImages || codeNext !== codeAppendix
-        setPages(pagesNext)
-        setBib(bibNext)
-        setTables(tablesNext)
-        setDiagrams(diagramsNext)
-        setFormulas(formulasNext)
-        setImages(imagesNext)
-        setWebImages(webImagesNext)
-        setCodeAppendix(codeNext)
+        const { next, touched } = applyPromptAnalysis(a, {
+          pages,
+          bib,
+          tables,
+          diagrams,
+          formulas,
+          images,
+          webImages,
+          codeAppendix,
+        })
+        setPages(next.pages)
+        setBib(next.bib)
+        setTables(next.tables)
+        setDiagrams(next.diagrams)
+        setFormulas(next.formulas)
+        setImages(next.images)
+        setWebImages(next.webImages)
+        setCodeAppendix(next.codeAppendix)
         if (touched) onToast('Настройки отчёта подстроены под промпт — проверить можно в ⚙')
         if (!docEmpty) {
           if (!window.confirm('Сгенерировать новый отчёт? Текущий текст будет заменён (откат — кнопкой в шапке).')) {
@@ -160,33 +159,12 @@ export function AiConsole({
             return
           }
         }
-        const { jobId } = await aiApi.generate(
-          {
-            topic: a?.topic || text,
-            requirements: a?.requirements || '',
-            target_pages: pagesNext,
-            quality,
-            include_bibliography: bibNext,
-            include_tables: tablesNext,
-            include_diagrams: diagramsNext,
-            include_formulas: formulasNext,
-            include_images: imagesNext,
-            include_web_images: webImagesNext,
-            include_code_appendix: codeNext,
-          },
-          files,
-        )
+        const { jobId } = await aiApi.generate(buildGenerateOptions(a, text, quality, next), files)
         onStarted(jobId, 'Курсовая сгенерирована — текст в редакторе', 'generate')
       } else {
-        // Правка: смысловая проверка инструкции (fail-open при сбое).
-        const v = await aiApi.validatePrompt('edit', text).catch(() => null)
-        if (v && !v.ok) {
-          setError(v.reason || 'Это не похоже на инструкцию правки — опишите, что изменить в документе.')
-          setStarting(false)
-          return
-        }
+        // Правка всего документа: результат применяется в редактор сразу.
         const { jobId } = await aiApi.edit(text, currentMd)
-        onStarted(jobId, 'Правка готова', 'edit')
+        onStarted(jobId, 'Правка готова — текст обновлён', 'edit')
       }
       setPrompt('')
       setOptsOpen(false)
@@ -291,7 +269,7 @@ export function AiConsole({
         placeholder={
           mode === 'new'
             ? 'Тема работы — ИИ напишет курсовую целиком…'
-            : 'Что изменить? ИИ поправит документ и покажет diff…'
+            : 'Что изменить? ИИ перепишет документ…'
         }
         className="w-full resize-none border-none bg-transparent px-1 pb-0.5 pt-2 text-[12.5px] leading-[1.45] text-ink outline-none disabled:opacity-60"
       />
@@ -327,7 +305,7 @@ export function AiConsole({
               title={
                 m === 'new'
                   ? 'Сгенерировать курсовую с нуля по теме из поля'
-                  : 'Исправить текущий документ по инструкции (с diff-просмотром)'
+                  : 'Исправить текущий документ по инструкции'
               }
               className="cursor-pointer rounded-[6px] border-none px-2 py-0.5 text-[10.5px] font-semibold transition-colors disabled:opacity-60"
               style={{
