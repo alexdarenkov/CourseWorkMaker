@@ -6,9 +6,9 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-coursework}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-coursework}
+      POSTGRES_DB: ${POSTGRES_DB:-coursework}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
       interval: 5s
@@ -16,86 +16,31 @@ services:
       retries: 10
     networks: [backend]
 
-  auth-service:
-    build: services/auth
+  # Единый монолит: auth + documents + convert (MD→DOCX) + ai (генерация).
+  # JWT проверяется здесь же — отдельного gateway больше нет (SEC-1).
+  backend:
+    build: services/backend
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auth_db
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-coursework}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-coursework}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-coursework}:${POSTGRES_PASSWORD:-coursework}@postgres:5432/${POSTGRES_DB:-coursework}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health | grep -q UP"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-    networks: [backend]
-
-  document-service:
-    build: services/document
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/document_db
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-coursework}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-coursework}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health | grep -q UP"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-    networks: [backend]
-
-  converter-service:
-    build: services/converter
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8001/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 10s
-    networks: [backend]
-
-  ai-service:
-    build: services/ai
-    environment:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_BASE_URL: ${AI_BASE_URL:-https://polza.ai/api/v1}
       AI_MODEL_FAST: ${AI_MODEL_FAST:-google/gemini-2.5-flash}
       AI_MODEL_BALANCED: ${AI_MODEL_BALANCED:-openai/gpt-5-mini}
       AI_MODEL_QUALITY: ${AI_MODEL_QUALITY:-anthropic/claude-sonnet-4.6}
+    ports:
+      # Наружу нужен только dev-серверу vite (проксирует /api сюда). В проде
+      # фронт ходит через nginx той же сети — порт можно закрыть override'ом.
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8002/health')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 10s
       timeout: 5s
       retries: 6
-      start_period: 10s
-    networks: [backend]
-
-  gateway:
-    build: services/gateway
-    environment:
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
-      AUTH_SERVICE_URL: http://auth-service:8081
-      DOCUMENT_SERVICE_URL: http://document-service:8082
-      CONVERTER_SERVICE_URL: http://converter-service:8001
-      AI_SERVICE_URL: http://ai-service:8002
-    ports:
-      - "8080:8080"
-    depends_on:
-      auth-service:
-        condition: service_healthy
-      document-service:
-        condition: service_healthy
-      converter-service:
-        condition: service_healthy
-      ai-service:
-        condition: service_healthy
+      start_period: 15s
     networks: [backend]
 
   frontend:
@@ -103,7 +48,7 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - gateway
+      - backend
     networks: [backend]
 
 volumes:

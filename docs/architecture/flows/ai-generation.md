@@ -9,20 +9,19 @@ sequenceDiagram
   actor U as Пользователь
   participant AC as AiConsole
   participant EP as EditorPage
-  participant G as gateway
-  participant M as ai-service main.py
+  participant M as backend :8000
   participant J as jobs.py (фон)
   participant LLM as Polza.ai
 
   U->>AC: промпт + Enter
   AC->>AC: validatePrompt: локальные регэкспы (AI-9)
-  AC->>M: POST /analyze-prompt (через gateway)
+  AC->>M: POST /api/ai/analyze-prompt (Bearer)
   M->>LLM: fast-модель, t=0, строгий JSON
   LLM-->>M: вердикт + извлечённые параметры
   M-->>AC: {ok, тема, target_pages, include_*}
   Note over AC: fail-open: сбой → пропускаем.<br/>Тогглы ⚙ подстраиваются, тост
-  AC->>G: POST /api/ai/generate (options + files[])
-  G->>M: JWT ok → /generate
+  AC->>M: POST /api/ai/generate (options + files[])
+  M->>M: JWT ok (get_current_user_id) → job
   M->>J: создать job → {jobId}
   J-->>AC: jobId
 

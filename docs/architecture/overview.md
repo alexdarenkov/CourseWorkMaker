@@ -8,60 +8,64 @@
 ```mermaid
 flowchart LR
   U[Браузер] --> F[frontend<br/>React + TS + Vite + Tailwind<br/>nginx :3000]
-  F -->|/api| G[gateway<br/>Spring Cloud Gateway :8080<br/>JWT-проверка, X-User-Id]
-  G --> A[auth-service<br/>Spring Boot :8081]
-  G --> D[document-service<br/>Spring Boot :8082]
-  G --> C[converter-service<br/>FastAPI :8001<br/>python-docx, Pandoc]
-  G --> AI[ai-service<br/>FastAPI :8002<br/>LangChain]
-  A --> P[(PostgreSQL<br/>auth_db)]
-  D --> P2[(PostgreSQL<br/>document_db)]
-  AI -->|OpenAI-совместимый API| K[Polza.ai<br/>прокси моделей]
+  F -->|/api| B[backend<br/>FastAPI :8000<br/>auth + documents + convert + ai<br/>JWT-проверка SEC-1]
+  B --> P[(PostgreSQL<br/>users + documents)]
+  B -->|OpenAI-совместимый API| K[Polza.ai<br/>прокси моделей]
+  B -->|subprocess| X[pandoc · matplotlib]
 ```
 
 ## Сервисы
 
+Бэкенд — ОДИН монолит (`services/backend`): микросервисы схлопнуты 2026-07-19
+(соло-MVP, низкая нагрузка — микросервисы были лишней ценой; см. ADR-0004).
+
 | Сервис | Стек | Порт | Назначение |
 |--------|------|------|------------|
 | `frontend` | React 18, TypeScript 5, Vite 5, Tailwind 3, KaTeX, Mermaid 10, Vitest 4 | 3000 (prod) / 5173 (dev) | SPA: редактор, ГОСТ-превью, консоль ИИ |
-| `gateway` | Java 21, Spring Boot 3.4.5, Spring Cloud Gateway 2024.0.1, JJWT 0.12.6 | 8080 | Единая точка входа, JWT-валидация, `X-User-Id` (SEC-1) |
-| `auth-service` | Java 21, Spring Boot, JPA, Flyway, BCrypt | 8081 | Регистрация, вход, профиль, выпуск JWT |
-| `document-service` | Java 21, Spring Boot, JPA, Flyway | 8082 | CRUD документов (markdown + настройки) |
-| `converter-service` | Python 3.12, FastAPI, python-docx, Pandoc | 8001 | MD → DOCX по ГОСТ; формулы LaTeX→OMML через Pandoc (`omml.py`) |
-| `ai-service` | Python 3.12, FastAPI, LangChain | 8002 | Генерация и правка курсовой (спека `ai-agent.md`) |
-| `postgres` | PostgreSQL 16-alpine | 5432 | Базы `auth_db`, `document_db` |
+| `backend` | Python 3.12, FastAPI, SQLAlchemy 2, PyJWT, bcrypt, python-docx, Pandoc, LangChain, matplotlib | 8000 | Монолит: auth + documents + convert (MD→DOCX) + ai; JWT-проверка (SEC-1) |
+| `postgres` | PostgreSQL 16-alpine | 5432 | Единая база: таблицы `users`, `documents` |
 
-Java-сервисы собираются Gradle'ом внутри Dockerfile (локального wrapper нет);
-Java-тестов в репозитории нет, health — `/actuator/health`.
+Backend — один Python-образ (`services/backend/Dockerfile`, pandoc — apt-пакетом);
+тесты гоняются в нём (CLAUDE.md). Health — `GET /health`.
 
-## Маршрутизация gateway
+## Модули backend
 
-Источник: `services/gateway/src/main/resources/application.yml`.
+Один FastAPI-app (`app/main.py`) монтирует роутеры по префиксам:
 
-| Префикс | Сервис | Переписывание пути |
-|---------|--------|--------------------|
-| `/api/auth/**` | auth-service | нет (путь как есть) |
-| `/api/documents/**` | document-service | нет (путь как есть) |
-| `/api/convert/**` | converter-service | `/api/convert/X` → `/convert/X` |
-| `/api/ai/**` | ai-service | `/api/ai/X` → `/X` |
+| Префикс | Модуль | Что делает |
+|---------|--------|------------|
+| `/api/auth/**` | `app/auth/` | регистрация, вход, профиль, выпуск JWT |
+| `/api/convert/**` | `app/convert/` | MD → DOCX по ГОСТ (`gost.py`/`md_parser.py`/`omml.py`) |
+| `/api/ai/**` | `app/ai/` | генерация/правка (спека `ai-agent.md`) |
 
-Ответный таймаут — **120 с** (потому генерация ИИ — асинхронные job, AI-4).
-CORS разрешён для `localhost:3000` и `localhost:5173`; наружу отдаётся
-заголовок `Content-Disposition` (имена скачиваемых файлов).
+JWT-проверка — зависимость `app/security.py:get_current_user_id` (замена
+gateway, SEC-1); публичны только /register и /login. CORS (FastAPI middleware)
+разрешён для `localhost:3000` и `localhost:5173`, наружу отдаётся
+`Content-Disposition`. Генерация ИИ — асинхронные job (AI-4), длинных HTTP-
+ответов нет.
 
 ## Данные
 
-- PostgreSQL 16, две базы: `auth_db` (пользователи), `document_db`
-  (документы: markdown + настройки JSON).
-- Инициализация: `infra/postgres/init-databases.sh` →
-  `/docker-entrypoint-initdb.d/`.
-- Миграции — Flyway, SQL в `src/main/resources/db/migration` Java-сервисов.
-- На клиенте: localStorage — текущий текст, ассеты картинок
-  (`asset:<key>`, data-URL отдельно от текста), настройки, JWT.
+- PostgreSQL 16, ОДНА база и ОДНА таблица — `users` (пользователи).
+- Схема создаётся при старте (`Base.metadata.create_all`, `app/db.py`);
+  модели — SQLAlchemy 2 с портируемыми типами (тесты идут на SQLite).
+- ДОКУМЕНТ живёт ТОЛЬКО на клиенте (решение 2026-07-19, серверный CRUD
+  документов удалён): localStorage — текст, ассеты картинок (`asset:<key>`,
+  data-URL отдельно от текста), настройки, JWT. Перенос между устройствами —
+  экспорт/импорт .zip (markdown + картинки).
 
 ## Frontend: ключевые модули
 
+Маршруты SPA (бренд UI — Texturn): `/` — главная-launcher (`pages/HomePage.tsx`:
+лендинг, карточка «Продолжить» при черновике, три входа — ИИ/пустой/загрузка),
+`/create` — страница генерации (`pages/CreatePage.tsx`, требует входа),
+`/editor` — редактор (`pages/EditorPage.tsx`), `/login` — вход. Действия между
+страницами передаются через `lib/handoff.ts` (одноразовый модульный «карман»:
+«upload» с File — его через history state не протащить, «track» с jobId
+запущенной генерации).
+
 - `src/lib/markdown.ts` — парсер MD в блочную модель (зеркало —
-  `converter/app/md_parser.py`).
+  `backend/app/convert/md_parser.py`).
 - `src/lib/gostRender.ts` — блоки → HTML по ГОСТ (спека `gost-layout.md`).
 - `src/lib/paginate.ts` — разбиение на страницы А4 (спека `pagination.md`).
 - `src/lib/highlight.ts` — overlay-подсветка редактора: `<textarea>` + слой
@@ -76,17 +80,22 @@ CORS разрешён для `localhost:3000` и `localhost:5173`; наружу 
   панели, модалки; вся многошаговая логика вынесена в хуки и lib-модули ниже.
 - `src/hooks/` — логика EditorPage по зонам ответственности:
   `usePagination` (дебаунс перепагинации 180 мс), `useDocPersistence`
-  (localStorage + облачное автосохранение, `docIdRef`, гонка «правки vs
-  поздняя загрузка из облака»), `useAiJob` (поллинг job 700 мс, стриминг
-  partial — AI-5, результат генерации/правки применяется в редактор сразу —
-  AI-6), `useToast`, `useZoom`.
-- `src/lib/aiPrompt.ts` — применение разбора analyze-prompt к настройкам
-  отчёта и сборка опций генерации (AI-9; сама `validatePrompt` — в
-  `AiConsole.tsx`).
+  (автосохранение в localStorage, дебаунс 700 мс — облачного CRUD нет),
+  `useAiJob` (поллинг job 700 мс, стриминг partial — AI-5, результат
+  генерации/правки применяется в редактор сразу — AI-6), `useToast`, `useZoom`.
+- `src/lib/aiPrompt.ts` — чистая логика точек входа ИИ: `validatePrompt`
+  (ступень 1 AI-9), применение разбора analyze-prompt к опциям отчёта и
+  сборка опций генерации.
+- `src/pages/CreatePage.tsx` — страница «Создать с ИИ» (/create): единственная
+  точка запуска генерации; запущенный job передаётся редактору через handoff
+  (AI-10).
 - `src/lib/docImport.ts` / `src/lib/docExport.ts` — чистая логика загрузки
   .md/.zip (кириллица в именах архива, перепривязка локальных картинок к
   asset-ключам) и экспорта .zip/.md (обратно импортируемый архив).
-- `src/components/AiConsole.tsx` — консоль ИИ (спека `ai-agent.md`).
+- `src/components/AiConsole.tsx` — консоль правок под редактором; гостю и на
+  пустом документе показывает подсказку без кнопок (спека `ai-agent.md`, AI-10).
+- `src/components/SiteHeader.tsx` — общая шапка страниц вне редактора (бренд,
+  переключатель темы, профиль/вход); пишет тему в localStorage.
 - `src/components/ui.tsx` — примитивы, в т.ч. `ModalShell` — единый каркас
   всех модалок (оверлей + панель).
 
@@ -106,10 +115,11 @@ Pandoc даёт родной OMML.
 
 - Оркестрация — `docker-compose.yml`; локальные переопределения —
   `docker-compose.override.yml` (в .gitignore).
-- Health checks у всех сервисов; `depends_on: service_healthy` задаёт порядок.
-- Наружу открыты только 3000 (frontend) и 8080 (gateway).
+- Health checks у postgres и backend; `depends_on: service_healthy` задаёт порядок.
+- Наружу открыт только фронт (`:3000`); backend `:8000` проброшен для dev-прокси
+  vite и в проде закрывается override'ом.
 - **Гочи**: `docker compose restart` НЕ перечитывает `.env` — нужен
   `docker compose up -d <service>`; docker-сборка иногда тихо не обновляет
-  образ (кэш) — после деплоя сверять артефакт в контейнере (converter:
-  grep правки в `app/gost.py`; frontend: имя бандла `index-<hash>.js`
+  образ (кэш) — после деплоя сверять артефакт в контейнере (backend:
+  grep правки в `app/convert/gost.py`; frontend: имя бандла `index-<hash>.js`
   в `dist/` против контейнера).

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { convertApi, DocumentDto, documentsApi } from '../api'
+import { convertApi } from '../api'
 import { useAuth } from '../auth/AuthContext'
 import { AiConsole } from '../components/AiConsole'
-import { DocsModal } from '../components/DocsModal'
 import { EditorPane } from '../components/EditorPane'
 import { Header } from '../components/Header'
 import { PreviewPane } from '../components/PreviewPane'
@@ -30,10 +29,11 @@ import {
   pickMainMdEntry,
   relinkLocalRefs,
 } from '../lib/docImport'
-import { buildZipExport, safeFileName, triggerDownload } from '../lib/docExport'
+import { safeFileName, triggerDownload } from '../lib/docExport'
+import { consumeHomeAction } from '../lib/handoff'
 import { mermaidToPng } from '../lib/mermaidRenderer'
 import { parseMD } from '../lib/markdown'
-import { EDITOR_ONLY_KEYS, migrateSettings, Settings } from '../lib/settings'
+import { EDITOR_ONLY_KEYS, Settings } from '../lib/settings'
 import { loadPersisted } from '../lib/storage'
 import { applyTheme, effectiveTheme, onSystemThemeChange } from '../lib/theme'
 
@@ -43,24 +43,21 @@ export function EditorPage() {
   const persisted = useRef(loadPersisted())
 
   const [md, setMd] = useState(persisted.current.md)
-  const [docName, setDocName] = useState(persisted.current.docName)
   const [settings, setSettings] = useState<Settings>(persisted.current.s)
   const [split, setSplit] = useState(0.46)
   const [collapsed, setCollapsed] = useState<'none' | 'editor' | 'preview'>('none')
   const [downloading, setDownloading] = useState<false | 'docx'>(false)
   const [settingsSection, setSettingsSection] = useState<'doc' | 'ed' | null>(null)
   const [userOpen, setUserOpen] = useState(false)
-  const [docsOpen, setDocsOpen] = useState(false)
 
   const taRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
-  // Пользователь уже редактировал документ/настройки или запустил генерацию —
-  // запоздавшая загрузка из облака не должна затирать его правки.
+  // Пользователь уже редактировал документ или запустил генерацию.
   const userTouched = useRef(false)
 
   // Актуальные значения для отложенных колбэков.
-  const stateRef = useRef({ md, docName, settings })
-  stateRef.current = { md, docName, settings }
+  const stateRef = useRef({ md, settings })
+  stateRef.current = { md, settings }
 
   const { toast, showToast } = useToast()
 
@@ -80,18 +77,9 @@ export function EditorPage() {
 
   const { pages, doPaginate, schedulePaginate } = usePagination(stateRef)
 
-  /* ---------- сохранение и синхронизация с облаком ---------- */
+  /* ---------- сохранение (только localStorage) ---------- */
 
-  const { docIdRef, scheduleSave, manualSave, flushRemoteSave } = useDocPersistence({
-    user,
-    stateRef,
-    userTouched,
-    setMd,
-    setDocName,
-    setSettings,
-    schedulePaginate,
-    showToast,
-  })
+  const { scheduleSave, manualSave } = useDocPersistence({ stateRef, showToast })
 
   /* ---------- масштаб ---------- */
 
@@ -182,17 +170,18 @@ export function EditorPage() {
   )
 
   // Применяет загруженный документ: переписывает локальные ссылки на asset-ключи
-  // из keyBySrc, грузит текст и кладёт картинки в хранилище.
+  // из keyBySrc, грузит текст и кладёт картинки в хранилище. Имя файла — в тему
+  // (титульник + имя экспорта).
   const applyLoadedDoc = useCallback(
     (text: string, name: string, keyBySrc: Map<string, string>, localCount: number) => {
       const { out, linked } = relinkLocalRefs(text, keyBySrc)
-      setDocName(name)
+      if (name) onSettingChange('topic', name)
       onMdChange(out)
       const left = localCount - linked
       if (localCount === 0) showToast('Документ загружен')
       else showToast(`Документ загружен · картинок подставлено: ${linked}, заглушек: ${left}`)
     },
-    [onMdChange, showToast],
+    [onMdChange, onSettingChange, showToast],
   )
 
   const uploadArchive = useCallback(
@@ -315,73 +304,25 @@ export function EditorPage() {
     return false
   }, [user, navigate, showToast])
 
-  /* ---------- экспорт .zip (markdown + картинки) ---------- */
-
-  const exportZip = useCallback(async () => {
-    const { md: m, docName: n } = stateRef.current
-    const { blob, safeName } = await buildZipExport(m, n, referencedAssets(m))
-    triggerDownload(blob, `${safeName}.zip`)
-    showToast('Архив сохранён: markdown + картинки')
-  }, [showToast])
-
-  const exportMd = useCallback(() => {
-    const { md: m, docName: n } = stateRef.current
-    const blob = new Blob([m], { type: 'text/markdown;charset=utf-8' })
-    triggerDownload(blob, `${safeFileName(n)}.md`)
-    showToast('Файл .md сохранён (картинки не входят — для них есть архив .zip)')
-  }, [showToast])
-
-  /* ---------- несколько документов ---------- */
-
-  const openDoc = useCallback(
-    async (doc: DocumentDto) => {
-      await flushRemoteSave()
-      userTouched.current = true
-      docIdRef.current = doc.id
-      setDocName(doc.name)
-      setMd(doc.content)
-      try {
-        setSettings((prev) => ({ ...prev, ...migrateSettings(JSON.parse(doc.settings)) }))
-      } catch {
-        /* settings повреждены — оставляем текущие */
-      }
-      schedulePaginate()
-      scheduleSave()
-      showToast(`Открыт документ «${doc.name}»`)
-    },
-    [flushRemoteSave, schedulePaginate, scheduleSave, showToast],
-  )
-
-  const createDoc = useCallback(async () => {
-    await flushRemoteSave()
-    userTouched.current = true
-    try {
-      const { settings: s } = stateRef.current
-      const doc = await documentsApi.create('Новая работа', '', JSON.stringify(s))
-      docIdRef.current = doc.id
-      setDocName(doc.name)
-      setMd('')
-      schedulePaginate()
-      scheduleSave()
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Не удалось создать документ')
+  // Действие с другой страницы: подхватить запущенную генерацию (/create)
+  // или открыть загруженный на главной файл.
+  useEffect(() => {
+    const action = consumeHomeAction()
+    if (!action) return
+    if (action.kind === 'track') {
+      onSettingChange('topic', action.topic)
+      trackAiJob(action.jobId, 'Курсовая сгенерирована — текст в редакторе', 'generate')
+    } else {
+      void uploadMd(action.file)
     }
-  }, [flushRemoteSave, schedulePaginate, scheduleSave, showToast])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  const onDocDeleted = useCallback(
-    (id: string) => {
-      if (docIdRef.current !== id) return
-      // Удалили открытый документ: текст остаётся локально, а облачная копия
-      // пересоздаётся, чтобы автосохранение продолжило работать.
-      docIdRef.current = null
-      const { md: m, docName: n, settings: s } = stateRef.current
-      documentsApi
-        .create(n || 'Курсовая работа', m, JSON.stringify(s))
-        .then((doc) => {
-          docIdRef.current = doc.id
-        })
-        .catch(() => {})
-    },
+  /* ---------- экспорт ---------- */
+
+  // Имя скачиваемого файла — тема работы (настройки титульника).
+  const exportName = useCallback(
+    () => (stateRef.current.settings.topic || '').trim() || 'Курсовая работа',
     [],
   )
 
@@ -390,7 +331,7 @@ export function EditorPage() {
       if (downloading || !requireAuth()) return
       setDownloading(format)
       try {
-        const { md: m, docName: n, settings: s } = stateRef.current
+        const { md: m, settings: s } = stateRef.current
         const assets: Record<string, string> = referencedAssets(m)
         // Логотип титульника — ассет вне markdown, конвертеру нужен явно.
         if (s.titleLogo?.startsWith('asset:')) {
@@ -406,7 +347,7 @@ export function EditorPage() {
           }),
         )
         // Серверная конвертация (Pandoc-формулы).
-        const name = n || 'Курсовая работа'
+        const name = safeFileName(exportName())
         const blob = await convertApi.docx(m, name, s, assets)
         triggerDownload(blob, `${name}.${format}`)
         showToast(`Файл «${name}.${format}» скачан`)
@@ -417,7 +358,7 @@ export function EditorPage() {
         setDownloading(false)
       }
     },
-    [downloading, requireAuth, showToast],
+    [downloading, exportName, requireAuth, showToast],
   )
 
   const splitDown = useCallback((e: React.MouseEvent) => {
@@ -443,19 +384,9 @@ export function EditorPage() {
       }}
     >
       <Header
-        docName={docName}
-        onDocName={(v) => {
-          userTouched.current = true
-          setDocName(v)
-          scheduleSave()
-        }}
         downloading={downloading}
         onDownload={download}
-        onExportZip={exportZip}
-        onExportMd={exportMd}
-        onOpenDocs={() => {
-          if (requireAuth()) setDocsOpen(true)
-        }}
+        onUploadMd={uploadMd}
         theme={effectiveTheme(settings.theme)}
         onToggleTheme={() =>
           onSettingChange('theme', effectiveTheme(settings.theme) === 'dark' ? 'light' : 'dark')
@@ -492,6 +423,7 @@ export function EditorPage() {
               <AiConsole
                 currentMd={md}
                 job={aiActive ? aiJob : null}
+                authed={Boolean(user)}
                 onEnsureAuth={requireAuth}
                 onStarted={trackAiJob}
                 onCancel={cancelAi}
@@ -547,16 +479,6 @@ export function EditorPage() {
         />
       )}
       {userOpen && <UserModal onClose={() => setUserOpen(false)} onToast={showToast} />}
-      {docsOpen && (
-        <DocsModal
-          currentId={docIdRef.current}
-          onOpen={openDoc}
-          onCreate={createDoc}
-          onDeleted={onDocDeleted}
-          onClose={() => setDocsOpen(false)}
-          onToast={showToast}
-        />
-      )}
       {toast && <Toast message={toast} />}
     </div>
   )

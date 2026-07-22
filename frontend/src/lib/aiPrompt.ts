@@ -1,11 +1,36 @@
 /**
- * Чистая логика ИИ-консоли: применение результата analyze-prompt к настройкам
- * отчёта и сборка опций генерации (AI-9, docs/specs/ai-agent.md).
- * Сама validatePrompt (ступень 1) живёт в components/AiConsole.tsx.
+ * Чистая логика точек входа ИИ: локальная валидация промпта (ступень 1 AI-9),
+ * применение результата analyze-prompt к настройкам отчёта и сборка опций
+ * генерации (docs/specs/ai-agent.md). Используется диалогом создания
+ * (NewReportModal) и консолью правок (AiConsole).
  */
 import type { AiOptions, AiQuality } from '../api'
 
-/** Настройки отчёта из ⚙-поповера консоли. */
+/** Проверка промпта ДО отправки: пустышки и мусор не уходят на бэкенд (AI-9). */
+export function validatePrompt(
+  text: string,
+  mode: 'new' | 'edit',
+  docEmpty: boolean,
+): string | null {
+  const t = text.trim()
+  if (mode === 'edit' && docEmpty) {
+    return 'Документ пуст — исправлять нечего. Сначала создайте отчёт.'
+  }
+  if (t.length < 5) {
+    return mode === 'new'
+      ? 'Тема слишком короткая — сформулируйте её подробнее (минимум 5 символов).'
+      : 'Опишите правку подробнее (минимум 5 символов).'
+  }
+  if (t.length > 4000) {
+    return 'Промпт слишком длинный (до 4000 символов).'
+  }
+  if (!/[а-яёa-z]{3,}/i.test(t)) {
+    return 'Промпт должен содержать осмысленный текст, а не только цифры и символы.'
+  }
+  return null
+}
+
+/** Настройки отчёта из диалога создания. */
 export interface ReportOptions {
   pages: number
   bib: boolean

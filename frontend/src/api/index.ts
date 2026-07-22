@@ -30,36 +30,6 @@ export const authApi = {
     }),
 }
 
-export interface DocumentMeta {
-  id: string
-  name: string
-  updatedAt: string
-}
-
-export interface DocumentDto {
-  id: string
-  name: string
-  content: string
-  settings: string
-  updatedAt: string
-}
-
-export const documentsApi = {
-  list: () => api<DocumentMeta[]>('/api/documents'),
-  get: (id: string) => api<DocumentDto>(`/api/documents/${id}`),
-  create: (name: string, content: string, settings: string) =>
-    api<DocumentDto>('/api/documents', {
-      method: 'POST',
-      body: JSON.stringify({ name, content, settings }),
-    }),
-  update: (id: string, name: string, content: string, settings: string) =>
-    api<DocumentDto>(`/api/documents/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ name, content, settings }),
-    }),
-  remove: (id: string) => api<void>(`/api/documents/${id}`, { method: 'DELETE' }),
-}
-
 export const convertApi = {
   docx: (markdown: string, docName: string, settings: Settings, assets: Record<string, string>) =>
     apiBlob('/api/convert/docx', {

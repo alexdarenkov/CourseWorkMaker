@@ -5,40 +5,40 @@
 
 Префикс ID: `SEC`. Все пункты — `as-built` (выписаны из CLAUDE.md и кода 2026-07-15).
 
-## SEC-1. JWT проверяет только gateway — `as-built` — ИНВАРИАНТ
+## SEC-1. JWT проверяется в монолите — `as-built` — ИНВАРИАНТ
 
-JWT (HS256, `JWT_SECRET` ≥32 байта) выпускает auth-service, проверяет
-ТОЛЬКО gateway (`JwtAuthFilter.java`). Внутрь личность передаётся заголовком
-`X-User-Id`; внутренние сервисы доверяют ему БЕЗ проверки токена.
+JWT (HS256, `JWT_SECRET` ≥32 байта) выпускает и проверяет ОДИН сервис —
+монолит `services/backend`. Проверка — FastAPI-зависимость
+`get_current_user_id` (`app/security.py`): читает `Authorization: Bearer`,
+валидирует подпись и срок, отдаёт `user_id` прямо в хендлер.
 
-Клиентские заголовки `X-User-*` ВСЕГДА вырезаются на шлюзе — иначе любой
-клиент подделает личность.
+После схлопывания микросервисов (2026-07-19) внутреннего заголовка
+`X-User-Id` **больше нет**: раньше личность передавалась им между сервисами и
+была поверхностью подделки (её вырезал и подставлял gateway); теперь `user_id`
+живёт в процессе и наружу не выходит — подделывать нечего.
 
-```gherkin
-Сценарий: подделка X-User-Id клиентом
-  Дано запрос с валидным JWT пользователя A
-    И заголовком X-User-Id пользователя B
-  Когда запрос проходит gateway
-  Тогда внутренний сервис получает X-User-Id пользователя A (из JWT)
-```
+**Следствие для разработки**: каждый НОВЫЙ приватный маршрут обязан требовать
+`Depends(get_current_user_id)` — на роутере (`dependencies=[…]`, как в
+convert/ai) или в самом хендлере. Забыл — маршрут открыт.
 
-**Следствие для разработки**: каждый НОВЫЙ маршрут в gateway обязан
-вырезать клиентские `X-User-*` — это легко забыть.
-
-- Реализация: `services/gateway/.../security/JwtAuthFilter.java`
+- Реализация: `services/backend/app/security.py:get_current_user_id`
+- Тесты: `tests/test_auth.py`, `tests/ai/test_service.py`
 
 ## SEC-2. Публичные маршруты — `as-built`
 
 Публичны ТОЛЬКО `POST /api/auth/login` и `POST /api/auth/register`.
 Всё остальное требует `Authorization: Bearer <token>`.
 
-- Реализация: `JwtAuthFilter.java`
+- Реализация: `app/auth/router.py` (только у /login, /register нет
+  `get_current_user_id`); остальные роутеры требуют вход.
 
 ## SEC-3. Пароли — `as-built`
 
-Хеширование BCrypt в auth-service.
+Хеширование BCrypt (`app/security.py`, библиотека `bcrypt`; учитываются первые
+72 байта — как в прежнем Spring BCrypt, поэтому старые хеши совместимы).
 
-- Реализация: `services/auth/`
+- Реализация: `app/security.py:hash_password`/`verify_password`
+- Тесты: `tests/test_security.py`
 
 ## SEC-4. SSRF-защита загрузки картинок — `as-built`
 

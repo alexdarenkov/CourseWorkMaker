@@ -1,4 +1,4 @@
-# CourseWorkMaker (md2docx)
+# CourseWorkMaker (md2docx) · бренд UI — Texturn
 
 <p align="center">
   <b>Онлайн-редактор Markdown с живым DOCX-превью и точным экспортом курсовой работы по ГОСТ 7.32-2017</b>
@@ -7,7 +7,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white" alt="React">
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
-  <img src="https://img.shields.io/badge/Spring_Boot-3-6DB33F?logo=spring&logoColor=white" alt="Spring Boot">
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker">
@@ -36,7 +36,7 @@ CourseWorkMaker — это веб-приложение для написания
 - 📝 **Markdown-редактор** с подсветкой синтаксиса, вставкой картинок, таблиц, кода, mermaid-схем и LaTeX-формул
 - 👁️ **Живое превью А4** «как в Word» — титульный лист, содержание, нумерация страниц/рисунков/таблиц/формул по ГОСТ
 - 📥 **Экспорт в DOCX** — точная серверная конвертация в Word-документ
-- 🤖 **ИИ-генерация** — агент (LangChain + Kimi через прокси Polza.ai) пишет работу по теме и загруженным материалам, сам проверяет себя и кладёт markdown в редактор
+- 🤖 **ИИ-генерация** — агент (LangChain через OpenAI-совместимый прокси Polza.ai) пишет работу по теме и загруженным материалам, сам проверяет себя и кладёт markdown в редактор
 
 ## Функции
 
@@ -48,9 +48,8 @@ CourseWorkMaker — это веб-приложение для написания
 - Mermaid-диаграммы (автоматически рендерятся в PNG)
 - LaTeX-формулы (inline `$...$` и display `$$...$$`)
 - Горячие клавиши: `Ctrl/Cmd+B` — жирный, `Ctrl/Cmd+I` — курсив, `Ctrl/Cmd+S` — сохранить
-- Автосохранение в локальное хранилище и в облако (для вошедших)
-- **Несколько документов**: список работ в облаке (создание, переключение, удаление)
-- **Экспорт .zip** (markdown + картинки) — резервная копия и перенос на другое устройство
+- Автосохранение в локальное хранилище браузера
+- **Загрузка своего .md/.zip** (кнопка в шапке или drag&drop) — .zip открывается с картинками
 - Целевой объём работы: прогресс «N из ~M стр.» в статус-баре
 
 ### Превью
@@ -89,34 +88,25 @@ CourseWorkMaker — это веб-приложение для написания
 ```mermaid
 flowchart LR
   U[Браузер] --> F[frontend<br/>React + TS + Tailwind<br/>nginx :3000]
-  F -->|/api| G[gateway<br/>Spring Cloud Gateway :8080<br/>JWT-проверка]
-  G --> A[auth-service<br/>Spring Boot :8081]
-  G --> D[document-service<br/>Spring Boot :8082]
-  G --> C[converter-service<br/>FastAPI + python-docx :8001]
-  G --> AI[ai-service<br/>FastAPI + LangChain :8002]
-  A --> P[(PostgreSQL<br/>auth_db)]
-  D --> P2[(PostgreSQL<br/>document_db)]
-  AI -->|OpenAI-совместимый API| K[Polza.ai → Kimi / Moonshot AI]
+  F -->|/api| B[backend<br/>FastAPI :8000<br/>auth · documents · convert · ai<br/>JWT-проверка]
+  B --> P[(PostgreSQL<br/>users · documents)]
+  B -->|OpenAI-совместимый API| K[Polza.ai · прокси моделей]
 ```
 
 ### Поток запросов
 
 1. Пользователь открывает приложение в браузере (`localhost:3000`)
-2. Фронтенд (nginx) раздаёт статику и проксирует `/api` на шлюз
-3. Gateway (`:8080`) проверяет JWT и маршрутизирует запросы во внутренние сервисы
-4. Внутренние сервисы получают идентификатор пользователя через заголовок `X-User-Id`
+2. Фронтенд (nginx) раздаёт статику и проксирует `/api` на backend
+3. Backend (`:8000`) проверяет JWT (FastAPI-зависимость) и обслуживает все `/api/*`
+4. Идентификатор пользователя берётся из токена в процессе — отдельного gateway и заголовка `X-User-Id` нет
 
 ## Технологический стек
 
 | Сервис | Стек | Назначение |
 |--------|------|------------|
 | `frontend` | React 18, TypeScript, Vite, Tailwind CSS, KaTeX, Mermaid | Редактор, ГОСТ-превью, страница входа, модалка ИИ-генерации |
-| `gateway` | Java 21, Spring Cloud Gateway | Единая точка входа, маршрутизация, валидация JWT, прокидывание `X-User-Id` |
-| `auth-service` | Java 21, Spring Boot, JPA, Flyway, BCrypt, JJWT | Регистрация, вход, профиль, смена пароля, выпуск JWT |
-| `document-service` | Java 21, Spring Boot, JPA, Flyway | Хранение документов пользователя (markdown + настройки) |
-| `converter-service` | Python 3.12, FastAPI, python-docx, latex2mathml | Точная конвертация MD → DOCX по ГОСТ 7.32-2017 |
-| `ai-service` | Python 3.12, FastAPI, LangChain, Kimi (через Polza.ai) | Генерация курсовой: план → разделы → самопроверка → доводка |
-| `postgres` | PostgreSQL 16 | Базы `auth_db` и `document_db` |
+| `backend` | Python 3.12, FastAPI, SQLAlchemy, PyJWT, bcrypt, python-docx, Pandoc, LangChain, matplotlib | Монолит: авторизация, документы, конвертация MD → DOCX по ГОСТ, ИИ-генерация; проверка JWT |
+| `postgres` | PostgreSQL 16 | Единая база: таблицы `users`, `documents` |
 
 ## Быстрый старт
 
@@ -150,10 +140,10 @@ open http://localhost:3000
 
 ### Первый запуск
 
-1. Откройте `http://localhost:3000`
-2. Зарегистрируйтесь или войдите
-3. Начните писать в Markdown-редакторе
-4. Настройте титульный лист через кнопку «Настройки»
+1. Откройте `http://localhost:3000` — главная страница
+2. Выберите вход: «Создать с ИИ» (нужен аккаунт), «Пустой документ» или «Загрузить .md/.zip»
+3. Пишите в Markdown-редакторе — справа живое превью по ГОСТ
+4. Настройте титульный лист через кнопку ⚙ над превью
 5. Скачайте DOCX через кнопку «Скачать .docx»
 
 ## Переменные окружения
@@ -189,7 +179,7 @@ openssl rand -base64 48
 
 ```bash
 # Запускаем бэкенд
-docker compose up postgres gateway auth-service document-service converter-service ai-service
+docker compose up postgres backend
 
 # В отдельном терминале — фронтенд с hot-reload
 cd frontend
@@ -197,20 +187,15 @@ npm install
 npm run dev
 ```
 
-Фронтенд будет доступен на `http://localhost:5173`, Vite проксирует `/api` на `localhost:8080`.
+Фронтенд будет доступен на `http://localhost:5173`, Vite проксирует `/api` на `localhost:8000`.
 
 ### Тесты
 
 ```bash
-# Конвертер (парсер, сборка DOCX по ГОСТ)
-cd services/converter
-docker build -t cwm-converter .
-docker run --rm -v "$PWD/tests:/srv/tests" cwm-converter python -m pytest tests -q
-
-# ИИ-сервис (линт документа, нормализация плана, песочница matplotlib, job'ы)
-cd services/ai
-docker build -t cwm-ai .
-docker run --rm -v "$PWD/tests:/srv/tests" cwm-ai python -m pytest tests -q
+# Бэкенд-монолит (auth, документы, конвертация DOCX, ИИ, песочница matplotlib)
+cd services/backend
+docker build -t cwm-backend .
+docker run --rm -v "$PWD/tests:/srv/tests" cwm-backend python -m pytest tests -q
 
 # Фронтенд (парсер Markdown, ГОСТ-рендер превью, метрики строк)
 cd frontend
@@ -233,7 +218,7 @@ docker compose up -d <service-name>
 
 ## API
 
-Все запросы (кроме авторизации) идут через Gateway (`http://localhost:8080`) с заголовком `Authorization: Bearer <token>`.
+Все запросы (кроме авторизации) идут в backend (`http://localhost:8000`) с заголовком `Authorization: Bearer <token>`.
 
 ### Авторизация
 
@@ -245,15 +230,7 @@ docker compose up -d <service-name>
 | `PUT` | `/api/auth/me` | Имя/почта (возвращает новый токен) |
 | `PUT` | `/api/auth/me/password` | Смена пароля |
 
-### Документы
-
-| Метод | Путь | Описание |
-|-------|------|----------|
-| `GET` | `/api/documents` | Список документов пользователя |
-| `POST` | `/api/documents` | Создать/сохранить документ |
-| `GET` | `/api/documents/{id}` | Получить документ |
-| `PUT` | `/api/documents/{id}` | Обновить документ |
-| `DELETE` | `/api/documents/{id}` | Удалить документ |
+Серверного хранения документов нет: документ живёт в localStorage браузера, перенос между устройствами — экспорт/импорт `.zip`.
 
 ### Конвертация
 
@@ -303,8 +280,8 @@ docker compose up -d <service-name>
 
 ## Безопасность
 
-- **JWT (HS256)**: выпускает auth-service, проверяет **только** gateway
-- **Внутренние сервисы**: личность передаётся заголовком `X-User-Id` (клиентские `X-User-*` всегда вырезаются на шлюзе)
+- **JWT (HS256)**: backend и выпускает, и проверяет токен (FastAPI-зависимость `get_current_user_id`)
+- **Один сервис**: идентификатор берётся из токена в процессе — заголовка `X-User-Id` и поверхности его подделки больше нет
 - **Публичные маршруты**: `POST /api/auth/login`, `POST /api/auth/register`
 - **Всё остальное**: требует JWT-токен
 - **Пароли**: хеширование BCrypt
@@ -319,7 +296,7 @@ CourseWorkMaker/
 │   ├── src/
 │   │   ├── components/          # UI-компоненты (редактор, превью, модалки)
 │   │   ├── lib/               # Утилиты: парсер Markdown, рендер ГОСТ, пагинация
-│   │   ├── pages/             # Страницы (редактор, авторизация)
+│   │   ├── pages/             # Страницы (главная, редактор, авторизация)
 │   │   ├── auth/              # Контекст авторизации
 │   │   └── api/               # HTTP-клиент
 │   ├── index.html
@@ -331,36 +308,20 @@ CourseWorkMaker/
 │   └── nginx.conf
 │
 ├── services/
-│   ├── gateway/               # Java Spring Cloud Gateway
-│   │   └── src/main/java/...
-│   ├── auth/                  # Java Spring Boot — авторизация
-│   │   └── src/main/java/...
-│   ├── document/              # Java Spring Boot — документы
-│   │   └── src/main/java/...
-│   ├── converter/             # Python FastAPI — конвертация MD → DOCX
-│   │   ├── app/
-│   │   │   ├── md_parser.py   # Парсер Markdown
-│   │   │   ├── gost.py        # Сборка DOCX по ГОСТ
-│   │   │   ├── omml.py        # OMML-формулы Word
-│   │   │   └── images.py      # Загрузка изображений
-│   │   ├── tests/
-│   │   ├── requirements.txt
-│   │   └── Dockerfile
-│   └── ai/                    # Python FastAPI — ИИ-генерация
+│   └── backend/                # Python FastAPI монолит
 │       ├── app/
-│       │   ├── agent.py        # ИИ-агент
-│       │   ├── figures.py      # Генерация графиков
-│       │   ├── matplotlib_exec.py  # Песочница matplotlib
-│       │   ├── files.py        # Обработка загруженных файлов
-│       │   └── jobs.py         # Асинхронные задачи
+│       │   ├── main.py         # Сборка приложения, роутеры, CORS
+│       │   ├── config.py       # Переменные окружения
+│       │   ├── db.py           # SQLAlchemy engine/сессия
+│       │   ├── security.py     # JWT + BCrypt + проверка входа (SEC-1)
+│       │   ├── auth/           # Регистрация, вход, профиль
+│       │   ├── convert/        # MD → DOCX по ГОСТ (gost.py, md_parser.py, omml.py)
+│       │   └── ai/             # ИИ-агент (agent.py, jobs.py, figures.py, matplotlib_exec.py)
+│       ├── tests/              # auth, documents, convert, ai
 │       ├── requirements.txt
 │       └── Dockerfile
 │
-├── infra/
-│   └── postgres/
-│       └── init-databases.sh   # Инициализация БД
-│
-├── docker-compose.yml          # Orchestration всех сервисов
+├── docker-compose.yml          # Orchestration (frontend, backend, postgres)
 ├── .env.example               # Шаблон переменных окружения
 ├── .gitignore                 # Исключения Git
 └── README.md                  # Этот файл

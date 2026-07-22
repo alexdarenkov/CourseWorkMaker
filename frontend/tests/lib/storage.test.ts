@@ -11,7 +11,6 @@ describe('loadPersisted', () => {
   it('пустое хранилище → образец документа и дефолтные настройки', () => {
     const state = loadPersisted()
     expect(state.md).toBe(SAMPLE_MD)
-    expect(state.docName).toBe('Курсовая работа')
     expect(state.s).toEqual(DEFAULT_SETTINGS)
   })
 
@@ -23,7 +22,6 @@ describe('loadPersisted', () => {
   it('round-trip: savePersisted → loadPersisted', () => {
     const saved = {
       md: '# Мой текст',
-      docName: 'Отчёт',
       s: { ...DEFAULT_SETTINGS, fontSize: 16 },
     }
     savePersisted(saved)

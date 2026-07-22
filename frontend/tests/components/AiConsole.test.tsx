@@ -1,7 +1,7 @@
 /**
- * ИИ-консоль (AI-9, AI-10, SEC-6, docs/specs/ai-agent.md, security.md):
- * локальная валидация промпта, разбор промпта analyze-prompt (fail-open),
- * автосинк режима с пустотой документа, запуск generate/edit.
+ * Консоль правок (AI-6, AI-10, docs/specs/ai-agent.md): при пустом документе —
+ * CTA на диалог создания; при непустом — правка текущего текста, локальная
+ * валидация инструкции (ступень 1 AI-9), запуск /edit без LLM-предпроверки.
  * Сетевые вызовы замоканы — тестируется только поведение консоли.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -11,8 +11,6 @@ import { AiConsole } from '../../src/components/AiConsole'
 
 vi.mock('../../src/api', () => ({
   aiApi: {
-    analyzePrompt: vi.fn(),
-    generate: vi.fn(),
     edit: vi.fn(),
   },
 }))
@@ -21,26 +19,11 @@ import { aiApi } from '../../src/api'
 
 const mocked = vi.mocked(aiApi)
 
-/** Разбор промпта «ничего не упомянуто»: все extract-поля null. */
-const ANALYZE_OK = {
-  ok: true,
-  reason: null,
-  topic: '',
-  requirements: '',
-  targetPages: null,
-  includeTables: null,
-  includeDiagrams: null,
-  includeFormulas: null,
-  includeImages: null,
-  includeWebImages: null,
-  includeCodeAppendix: null,
-  includeBibliography: null,
-}
-
 function setup(overrides: Partial<Parameters<typeof AiConsole>[0]> = {}) {
   const props = {
-    currentMd: SAMPLE_MD,
+    currentMd: '# Мой отчёт\n\nТекст.',
     job: null,
+    authed: true,
     onEnsureAuth: vi.fn(() => true),
     onStarted: vi.fn(),
     onCancel: vi.fn(),
@@ -62,135 +45,59 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('AI-10: автосинк режима с пустотой документа', () => {
-  it('стартовая инструкция (SAMPLE_MD) считается пустым документом → режим «Новый отчёт»', () => {
+describe('AI-10: пустой документ → подсказка без кнопок', () => {
+  it('стартовая инструкция (SAMPLE_MD) считается пустым документом → подсказка вместо поля', () => {
     setup({ currentMd: SAMPLE_MD })
-    expect(promptField().placeholder).toContain('Тема работы')
+    expect(screen.getByText(/станет доступна, когда в документе появится текст/)).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    // Кнопок запуска генерации в консоли нет — только навигация в шапке.
+    expect(screen.queryByRole('button', { name: /Создать/ })).toBeNull()
   })
 
-  it('непустой документ → режим «Правка»', () => {
-    setup({ currentMd: '# Мой отчёт\n\nТекст.' })
+  it('непустой документ → поле правки', () => {
+    setup({ currentMd: '# Мой отчёт' })
     expect(promptField().placeholder).toContain('Что изменить?')
   })
 
-  it('режим следует за документом при его изменении', () => {
-    const { props, rerender } = setup({ currentMd: SAMPLE_MD })
-    rerender(<AiConsole {...props} currentMd="# Появился текст" />)
-    expect(promptField().placeholder).toContain('Что изменить?')
+  it('гость (authed=false) → подсказка входа даже при непустом документе', () => {
+    setup({ currentMd: '# Мой отчёт', authed: false })
+    expect(screen.getByText(/доступна после входа/)).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 })
 
-describe('AI-9 ступень 1: локальная валидация (запрос не уходит на бэкенд)', () => {
-  it('короткая тема (<5 символов) → инлайн-ошибка', async () => {
+describe('AI-9 ступень 1: локальная валидация инструкции', () => {
+  it('короткая инструкция (<5 символов) → инлайн-ошибка, запрос не уходит', async () => {
     setup()
     send('аб')
-    expect(await screen.findByText(/Тема слишком короткая/)).toBeInTheDocument()
-    expect(mocked.analyzePrompt).not.toHaveBeenCalled()
-    expect(mocked.generate).not.toHaveBeenCalled()
+    expect(await screen.findByText(/Опишите правку подробнее/)).toBeInTheDocument()
+    expect(mocked.edit).not.toHaveBeenCalled()
   })
 
-  it('промпт длиннее 4000 символов → инлайн-ошибка', async () => {
-    setup()
-    send('а'.repeat(4001))
-    expect(await screen.findByText(/слишком длинный/)).toBeInTheDocument()
-    expect(mocked.analyzePrompt).not.toHaveBeenCalled()
-  })
-
-  it('нет трёх букв подряд (цифры и символы) → инлайн-ошибка', async () => {
+  it('нет трёх букв подряд → инлайн-ошибка', async () => {
     setup()
     send('12345 !@#$ 678')
     expect(await screen.findByText(/осмысленный текст/)).toBeInTheDocument()
-    expect(mocked.analyzePrompt).not.toHaveBeenCalled()
-  })
-
-  it('правка пустого документа → ошибка с подсказкой сменить режим', async () => {
-    setup({ currentMd: SAMPLE_MD })
-    fireEvent.click(screen.getByText('Правка'))
-    send('исправь введение')
-    expect(await screen.findByText(/Документ пуст/)).toBeInTheDocument()
     expect(mocked.edit).not.toHaveBeenCalled()
   })
 
   it('ошибка сбрасывается при правке текста промпта', async () => {
     setup()
     send('аб')
-    await screen.findByText(/Тема слишком короткая/)
+    await screen.findByText(/Опишите правку подробнее/)
     fireEvent.change(promptField(), { target: { value: 'абв' } })
-    expect(screen.queryByText(/Тема слишком короткая/)).toBeNull()
+    expect(screen.queryByText(/Опишите правку подробнее/)).toBeNull()
   })
 
-  it('без входа (onEnsureAuth=false) задача не запускается', async () => {
+  it('без входа (onEnsureAuth=false) правка не запускается', async () => {
     const { props } = setup({ onEnsureAuth: vi.fn(() => false) })
-    send('Разработка информационной системы')
+    send('сделай введение подробнее')
     await waitFor(() => expect(props.onEnsureAuth).toHaveBeenCalled())
-    expect(mocked.analyzePrompt).not.toHaveBeenCalled()
+    expect(mocked.edit).not.toHaveBeenCalled()
   })
 })
 
-describe('AI-9 ступень 2: разбор промпта analyze-prompt', () => {
-  it('ok:false → причина инлайн, генерация не запускается', async () => {
-    mocked.analyzePrompt.mockResolvedValue({ ...ANALYZE_OK, ok: false, reason: 'Это не тема' })
-    setup()
-    send('фывафыва фывафыва')
-    expect(await screen.findByText('Это не тема')).toBeInTheDocument()
-    expect(mocked.generate).not.toHaveBeenCalled()
-  })
-
-  it('SEC-6 fail-open: сбой analyze-prompt не блокирует генерацию', async () => {
-    mocked.analyzePrompt.mockRejectedValue(new Error('сеть упала'))
-    mocked.generate.mockResolvedValue({ jobId: 'j1' })
-    const { props } = setup()
-    send('Разработка информационной системы')
-    await waitFor(() =>
-      expect(props.onStarted).toHaveBeenCalledWith('j1', 'Курсовая сгенерирована — текст в редакторе', 'generate'),
-    )
-    expect(mocked.generate).toHaveBeenCalledWith(
-      expect.objectContaining({ topic: 'Разработка информационной системы' }),
-      [],
-    )
-  })
-
-  it('извлечённые поля подстраивают настройки (null — не трогать) + тост', async () => {
-    mocked.analyzePrompt.mockResolvedValue({
-      ...ANALYZE_OK,
-      topic: 'Фильтр Калмана',
-      targetPages: 25,
-      includeDiagrams: false,
-    })
-    mocked.generate.mockResolvedValue({ jobId: 'j2' })
-    const { props } = setup()
-    send('Фильтр Калмана, 25 страниц, без mermaid-схем')
-    await waitFor(() => expect(mocked.generate).toHaveBeenCalled())
-    expect(mocked.generate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        topic: 'Фильтр Калмана',
-        target_pages: 25,
-        include_diagrams: false,
-        // Не упомянутые в промпте тогглы остаются дефолтными.
-        include_tables: true,
-        include_bibliography: true,
-      }),
-      [],
-    )
-    expect(props.onToast).toHaveBeenCalledWith(expect.stringContaining('подстроены под промпт'))
-  })
-
-  it('генерация при непустом документе требует confirm; отказ — задача не стартует', async () => {
-    mocked.analyzePrompt.mockResolvedValue(ANALYZE_OK)
-    // В happy-dom window.confirm отсутствует — подставляем мок целиком.
-    const confirmMock = vi.fn(() => false)
-    vi.stubGlobal('confirm', confirmMock)
-    setup({ currentMd: '# Уже есть текст' })
-    fireEvent.click(screen.getByText('Новый отчёт'))
-    send('Разработка информационной системы')
-    await waitFor(() => expect(mocked.analyzePrompt).toHaveBeenCalled())
-    await waitFor(() => expect(confirmMock).toHaveBeenCalled())
-    expect(mocked.generate).not.toHaveBeenCalled()
-    vi.unstubAllGlobals()
-  })
-})
-
-describe('AI-6: режим «Правка»', () => {
+describe('AI-6: запуск правки', () => {
   it('валидная инструкция → edit(инструкция, документ) без LLM-предпроверки', async () => {
     mocked.edit.mockResolvedValue({ jobId: 'j3' })
     const md = '# Отчёт\n\nВведение.'
@@ -200,6 +107,14 @@ describe('AI-6: режим «Правка»', () => {
       expect(props.onStarted).toHaveBeenCalledWith('j3', 'Правка готова — текст обновлён', 'edit'),
     )
     expect(mocked.edit).toHaveBeenCalledWith('сделай введение подробнее', md)
+  })
+
+  it('ошибка запуска — тостом, onStarted не вызывается', async () => {
+    mocked.edit.mockRejectedValue(new Error('Сервис недоступен'))
+    const { props } = setup()
+    send('сделай введение подробнее')
+    await waitFor(() => expect(props.onToast).toHaveBeenCalledWith('Сервис недоступен'))
+    expect(props.onStarted).not.toHaveBeenCalled()
   })
 })
 

@@ -3,8 +3,7 @@ import { edColors, highlight } from '../lib/highlight'
 import { esc } from '../lib/markdown'
 import type { Settings } from '../lib/settings'
 import { effectiveTheme } from '../lib/theme'
-import { CodeIcon, CollapseLeftIcon, DiagramIcon, FolderIcon, GearIcon, ImageIcon, MathIcon, TableIcon, UploadIcon } from './icons'
-import { ImageLibraryModal } from './ImageLibraryModal'
+import { CodeIcon, CollapseLeftIcon, DiagramIcon, GearIcon, ImageIcon, MathIcon, TableIcon } from './icons'
 import { IconButton } from './ui'
 
 interface EditorPaneProps {
@@ -39,12 +38,10 @@ export function EditorPane(props: EditorPaneProps) {
   const preRef = useRef<HTMLPreElement>(null)
   const gutRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const mdFileRef = useRef<HTMLInputElement>(null)
   // Файл тянут над редактором (счётчик — dragenter/dragleave прилетают от
   // дочерних элементов парами).
   const dragDepth = useRef(0)
   const [dragOver, setDragOver] = useState(false)
-  const [libOpen, setLibOpen] = useState(false)
 
   const wrap = s.wordWrap
   const showGutter = s.lineNumbers && !wrap
@@ -158,25 +155,7 @@ export function EditorPane(props: EditorPaneProps) {
         </div>
       )}
       <div className="flex h-[38px] flex-shrink-0 items-center gap-1 border-b border-hover pl-2.5 pr-2.5">
-        <input
-          ref={mdFileRef}
-          type="file"
-          accept=".md,.markdown,.txt,.zip,text/markdown,text/plain,application/zip"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) props.onUploadMd(f)
-            e.target.value = ''
-          }}
-        />
-        <IconButton
-          title="Загрузить .md или .zip (можно просто перетащить файл в редактор)"
-          onClick={() => mdFileRef.current?.click()}
-        >
-          <UploadIcon />
-        </IconButton>
         <div className="flex-1" />
-        <div className="mx-1 h-4 w-px bg-hover" />
         <input
           ref={fileRef}
           type="file"
@@ -190,12 +169,6 @@ export function EditorPane(props: EditorPaneProps) {
         />
         <IconButton title="Вставить изображение с устройства" onClick={() => fileRef.current?.click()}>
           <ImageIcon />
-        </IconButton>
-        <IconButton
-          title="Библиотека картинок: вставить ранее загруженные, удалить лишние"
-          onClick={() => setLibOpen(true)}
-        >
-          <FolderIcon size={15} />
         </IconButton>
         <IconButton title="Вставить таблицу" onClick={() => props.onInsert(SNIPPETS.table)}>
           <TableIcon />
@@ -311,14 +284,6 @@ export function EditorPane(props: EditorPaneProps) {
         </div>
       </div>
       {props.bottomPanel}
-      {libOpen && (
-        <ImageLibraryModal
-          md={md}
-          onInsert={props.onInsert}
-          onClose={() => setLibOpen(false)}
-          onToast={props.onToast}
-        />
-      )}
     </section>
   )
 }

@@ -8,20 +8,17 @@
 sequenceDiagram
   actor U as Пользователь
   participant E as EditorPage
-  participant G as gateway :8080
-  participant C as converter :8001
+  participant B as backend :8000
   participant Ext as Внешние URL
 
   U->>E: «Скачать .docx»
   Note over E: Сбор полезной нагрузки:<br/>markdown + settings + assets<br/>(mermaid уже отрендерен в PNG c pHYs,<br/>titleLogo добавлен явно)
-  E->>G: POST /api/convert/docx<br/>Authorization: Bearer
-  G->>G: JWT-проверка, вырезать клиентские X-User-*,<br/>подставить X-User-Id (SEC-1)
-  G->>C: POST /convert/docx (rewrite пути)
-  C->>C: md_parser.parse → блочная модель
-  C->>Ext: скачать http(s)-картинки<br/>(SSRF-фильтр, ≤10 МБ — SEC-4)
-  C->>C: gost.build(): стили, TOC-поле,<br/>формулы → pandoc → OMML (omml.py, кэш)
-  C-->>G: файл .docx
-  G-->>E: файл (Content-Disposition)
+  E->>B: POST /api/convert/docx<br/>Authorization: Bearer
+  B->>B: JWT-проверка (get_current_user_id, SEC-1)
+  B->>B: md_parser.parse → блочная модель
+  B->>Ext: скачать http(s)-картинки<br/>(SSRF-фильтр, ≤10 МБ — SEC-4)
+  B->>B: gost.build(): стили, TOC-поле,<br/>формулы → pandoc → OMML (omml.py, кэш)
+  B-->>E: файл .docx (Content-Disposition)
   E-->>U: скачивание в браузере
 ```
 
@@ -36,5 +33,5 @@ sequenceDiagram
   превью сверяется по DOCX, открытому в Word/LibreOffice (`pagination.md`,
   «Верификация»). Экспорт в PDF (через LibreOffice) убран 2026-07-18 —
   пользователь при необходимости сохраняет PDF из Word.
-- Таймаут ответа gateway — 120 с; большие документы с десятками формул
-  укладываются за счёт кэша OMML.
+- Экспорт синхронный; тяжёлые документы с десятками формул укладываются за счёт
+  кэша OMML (генерация ИИ, в отличие от экспорта, — отдельные async-джобы, AI-4).

@@ -1,10 +1,10 @@
 # Архитектура: API
 
-Все запросы идут через gateway (`http://localhost:8080`) с заголовком
-`Authorization: Bearer <token>`; публичны только login/register (SEC-2).
-Правила маршрутизации/переписывания путей — `overview.md`.
+Все `/api/*` обслуживает монолит `services/backend` (`http://localhost:8000`)
+с заголовком `Authorization: Bearer <token>`; публичны только login/register
+(SEC-2). Отдельного gateway больше нет — JWT проверяется в самом сервисе (SEC-1).
 
-## Авторизация (`/api/auth` → auth-service)
+## Авторизация (`/api/auth`)
 
 | Метод | Путь | Описание |
 |-------|------|----------|
@@ -14,23 +14,16 @@
 | `PUT` | `/api/auth/me` | Имя/почта (возвращает новый токен) |
 | `PUT` | `/api/auth/me/password` | Смена пароля |
 
-## Документы (`/api/documents` → document-service)
+Серверного CRUD документов нет (удалён 2026-07-19): документ живёт в
+localStorage браузера, перенос — экспорт/импорт .zip.
 
-| Метод | Путь | Описание |
-|-------|------|----------|
-| `GET` | `/api/documents` | Список документов пользователя |
-| `POST` | `/api/documents` | Создать документ |
-| `GET` | `/api/documents/{id}` | Получить документ |
-| `PUT` | `/api/documents/{id}` | Обновить документ |
-| `DELETE` | `/api/documents/{id}` | Удалить документ |
-
-## Конвертация (`/api/convert` → converter-service `/convert`)
+## Конвертация (`/api/convert`)
 
 | Метод | Путь | Описание |
 |-------|------|----------|
 | `POST` | `/api/convert/docx` | `{markdown, docName, settings, assets}` → файл .docx |
 
-## ИИ (`/api/ai` → ai-service `/`)
+## ИИ (`/api/ai`)
 
 | Метод | Путь | Описание |
 |-------|------|----------|
@@ -41,14 +34,15 @@
 | `GET` | `/api/ai/pricing` | Цены уровней качества (₽ за млн токенов) |
 | `POST` | `/api/ai/analyze-prompt` | Валидация промпта генерации + извлечение темы/требований/target_pages/include_* (AI-9), fail-open |
 
-Служебное: `GET /health` у обоих Python-сервисов (в gateway не маршрутизируется).
+Служебное: `GET /health` (без авторизации) → `{status, aiConfigured}`.
 
 ## Переменные окружения
 
 | Переменная | Обязательная | Описание |
 |------------|-------------|----------|
 | `JWT_SECRET` | да | Секрет HS256, ≥32 байта (`openssl rand -base64 48`) |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` | нет | Доступ PostgreSQL |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | нет | Доступ и имя единой БД |
+| `DATABASE_URL` | нет | Строка SQLAlchemy (`postgresql+psycopg://…`); в compose выводится из `POSTGRES_*` |
 | `AI_API_KEY` | нет | Ключ Polza.ai; без него работает всё, кроме ИИ |
 | `AI_BASE_URL` | нет | OpenAI-совместимый API (`https://polza.ai/api/v1`) |
 | `AI_MODEL_FAST` / `AI_MODEL_BALANCED` / `AI_MODEL_QUALITY` | нет | Модели уровней качества, формат `provider/model` |

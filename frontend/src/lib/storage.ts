@@ -5,7 +5,6 @@ const KEY = 'md2docx:v1'
 
 export interface PersistedState {
   md: string
-  docName: string
   s: Settings
 }
 
@@ -15,14 +14,13 @@ export function loadPersisted(): PersistedState {
     if (raw) {
       return {
         md: typeof raw.md === 'string' ? raw.md : SAMPLE_MD,
-        docName: raw.docName || 'Курсовая работа',
         s: { ...DEFAULT_SETTINGS, ...migrateSettings(raw.s || {}) },
       }
     }
   } catch {
     /* повреждённое хранилище игнорируем */
   }
-  return { md: SAMPLE_MD, docName: 'Курсовая работа', s: { ...DEFAULT_SETTINGS } }
+  return { md: SAMPLE_MD, s: { ...DEFAULT_SETTINGS } }
 }
 
 export function savePersisted(state: PersistedState): void {

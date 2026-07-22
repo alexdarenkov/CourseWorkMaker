@@ -3,12 +3,12 @@
  * отчёта («null — не упомянуто, тоггл не трогаем») и сборка опций генерации.
  */
 import { describe, expect, it } from 'vitest'
-import { validatePrompt } from '../../src/components/AiConsole'
 import {
   applyPromptAnalysis,
   buildGenerateOptions,
   PromptAnalysis,
   ReportOptions,
+  validatePrompt,
 } from '../../src/lib/aiPrompt'
 
 describe('AI-9 ступень 1: validatePrompt (локальные правила, без сети)', () => {

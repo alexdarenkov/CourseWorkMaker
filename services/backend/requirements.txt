@@ -1,0 +1,26 @@
+# Веб-слой
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic==2.11.4
+email-validator==2.2.0
+python-multipart==0.0.20
+httpx==0.28.1
+
+# Аутентификация и БД (бывшие auth/document на Java)
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+bcrypt==4.2.1
+PyJWT==2.10.1
+
+# Конвертер MD → DOCX (+ pandoc из системного пакета для формул)
+python-docx==1.1.2
+
+# ИИ-агент
+matplotlib==3.10.3
+numpy==2.2.6
+langchain-core==0.3.59
+langchain-openai==0.3.16
+pypdf==5.5.0
+
+# Тесты
+pytest==8.3.5

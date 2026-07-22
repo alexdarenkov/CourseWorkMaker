@@ -25,7 +25,7 @@ export function AuthPage() {
           ? await authApi.login(email, password)
           : await authApi.register(name, email, password)
       signIn(resp.token, resp.user)
-      navigate('/')
+      navigate('/editor')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Что-то пошло не так')
     } finally {
@@ -53,10 +53,10 @@ export function AuthPage() {
               fontWeight: 700,
             }}
           >
-            §
+            T
           </div>
           <div className="flex flex-col gap-px">
-            <div className="font-mono text-[15px] font-bold tracking-wide">md2docx</div>
+            <div className="font-mono text-[15px] font-bold tracking-wide">Texturn</div>
             <div className="text-[10px] font-semibold uppercase tracking-[.08em] text-muted">
               ГОСТ 7.32—2017
             </div>
@@ -131,7 +131,7 @@ export function AuthPage() {
         </div>
 
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/editor')}
           className="mx-auto mt-5 block cursor-pointer border-none bg-transparent text-[12.5px] text-muted hover:text-ink"
         >
           ← Продолжить без входа (как гость)
