@@ -14,6 +14,23 @@ export interface Page {
   html: string
 }
 
+/**
+ * Якорь синхронной прокрутки: строка markdown → место в ленте превью.
+ * page — абсолютный номер страницы (1-based, титульник/реферат/содержание
+ * учтены), y — смещение от верха контентной области листа в px (без зума).
+ */
+export interface Anchor {
+  line: number
+  page: number
+  y: number
+}
+
+/** Результат пагинации: страницы превью и карта якорей для синхронной прокрутки. */
+export interface PaginateResult {
+  pages: Page[]
+  anchors: Anchor[]
+}
+
 const PAGE_CONTENT_HEIGHT_PX = 971 // 257mm контентной области при 96dpi
 
 // Допуск размещения служебной свободной строки на границе листа (~3 мм):
@@ -210,13 +227,23 @@ function packToc(headings: HeadingRec[]): number[][] {
  * скрытом DOM-хосте. recOffset — число страниц перед этим куском контента
  * (титульник/реферат/содержание): прибавляется к номерам страниц заголовков.
  */
-function layoutBlocks(out: RenderedBlock[], recOffset: number): string[][] {
+function layoutBlocks(out: RenderedBlock[], recOffset: number, anchors: Anchor[]): string[][] {
   if (out.length === 0) return []
   const el = getHost()
   el.innerHTML = out.map((b) => '<div>' + b.html + '</div>').join('')
   const kids = el.children
   const pagesB: string[][] = [[]]
   let y = 0
+  // Якорь ставится там, где блок НАЧИНАЕТ рисоваться — после всех переносов
+  // страницы, но до вывода html: тогда (страница, y) указывают на его верх.
+  // Одна строка markdown порождает несколько блоков (свободная строка +
+  // рисунок + подпись) — держим только первый, он и есть начало строки.
+  const anchor = (b: RenderedBlock) => {
+    if (b.line === undefined) return
+    const prev = anchors[anchors.length - 1]
+    if (prev && prev.line === b.line) return
+    anchors.push({ line: b.line, page: recOffset + pagesB.length, y })
+  }
   const heightOf = (i: number) =>
     kids[i] ? (kids[i] as HTMLElement).getBoundingClientRect().height : 24
   const pushFrag = (html: string) => pagesB[pagesB.length - 1].push(html)
@@ -230,6 +257,7 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number): string[][] {
     // блок ничего не рисует.
     if (b.isPageBreak) {
       if (pagesB[pagesB.length - 1].length > 0) newPage()
+      anchor(b)
       return
     }
     // Таблица делится построчно между страницами (шапка повторяется).
@@ -240,6 +268,7 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number): string[][] {
       // строка; иначе переносим начало таблицы на новую страницу.
       const minFirst = capH + headH + (rowH[0] || 0)
       if (pagesB[pagesB.length - 1].length > 0 && y + minFirst > PAGE_CONTENT_HEIGHT_PX) newPage()
+      anchor(b)
       let first = true
       let frag: string[] = []
       let fragH = capH + headH
@@ -299,6 +328,7 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number): string[][] {
         y + Math.min(firstNeed, PAGE_CONTENT_HEIGHT_PX) > PAGE_CONTENT_HEIGHT_PX
       )
         newPage()
+      anchor(b)
       // Куски текущего фрагмента: html + измеренная высота. Пустой фрагмент
       // не выводится (возникает, когда разрез абзаца не удался и целый блок
       // уходит на новую страницу — красная строка первой части сохраняется).
@@ -468,6 +498,7 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number): string[][] {
       pagesB.push([])
       y = 0
     }
+    anchor(b)
     // Свободные строки — настоящие пустые абзацы DOCX: Word показывает их и
     // в начале страницы, поэтому и превью их не гасит (isBlank — только
     // маркер дедупликации в renderAll).
@@ -485,7 +516,7 @@ export function paginate(
   s: Settings,
   mermaidHtml: (code: string) => string | null,
   onAssetReady: () => void = () => {},
-): Page[] {
+): PaginateResult {
   const blocks = parseMD(md)
   const { out, ctx } = renderAll(blocks, s, mermaidHtml, onAssetReady)
 
@@ -513,10 +544,14 @@ export function paginate(
   const tocHeadings = hasReferat ? ctx.headings.slice(1) : ctx.headings
 
   const titlePages = s.titlePage ? 1 : 0
-  const refPages = layoutBlocks(outRef, titlePages)
+  // Якоря копятся сквозь оба вызова раскладки: reсOffset уже переводит номера
+  // страниц в абсолютные, а блоки идут в порядке исходника — значит и якоря
+  // выходят отсортированными по строке.
+  const anchors: Anchor[] = []
+  const refPages = layoutBlocks(outRef, titlePages, anchors)
   const tocPacking = s.toc ? packToc(tocHeadings) : []
   const offset = titlePages + refPages.length + tocPacking.length
-  const pagesB = layoutBlocks(outMain, offset)
+  const pagesB = layoutBlocks(outMain, offset, anchors)
 
   const all: { html: string; show: boolean }[] = []
   if (s.titlePage) {
@@ -539,7 +574,7 @@ export function paginate(
 
   // Номер страницы — тем же шрифтом и кеглем, что основной текст (14 пт),
   // одинарным интервалом на позиции нижнего колонтитула Word (10 мм от края).
-  return all.map((p, i) => ({
+  const pages = all.map((p, i) => ({
     html:
       p.html +
       (p.show && s.pageNumbers
@@ -548,4 +583,5 @@ export function paginate(
           '</div>'
         : ''),
   }))
+  return { pages, anchors }
 }

@@ -246,3 +246,70 @@ export const Spinner = ({ size = 14 }: IconProps) => (
     }}
   />
 )
+
+export const SquarePenIcon = ({ size = 14, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" />
+  </svg>
+)
+
+export const LogInIcon = ({ size = 15, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+    <path d="m10 17 5-5-5-5" />
+    <path d="M15 12H3" />
+  </svg>
+)
+
+export const LogOutIcon = ({ size = 14, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <path d="m16 17 5-5-5-5" />
+    <path d="M21 12H9" />
+  </svg>
+)
+
+export const WalletIcon = ({ size = 22, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2" />
+    <path d="M21 12h-6a2 2 0 0 0 0 4h6" />
+  </svg>
+)
+
+export const PenIcon = ({ size = 14, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+  </svg>
+)
+
+export const CardIcon = ({ size = 16, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <rect x="2" y="5" width="20" height="14" rx="2" />
+    <path d="M2 10h20" />
+  </svg>
+)
+
+export const UserIcon = ({ size = 19, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21a8 8 0 0 1 16 0" />
+  </svg>
+)
+
+export const ListIcon = ({ size = 24, strokeWidth = 1.8 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+  </svg>
+)
+
+export const ListPlusIcon = ({ size = 16, strokeWidth = 2 }: IconProps) => (
+  <svg {...svgProps(size, strokeWidth)}>
+    <path d="M11 12H3" />
+    <path d="M16 6H3" />
+    <path d="M16 18H3" />
+    <path d="M18 9v6" />
+    <path d="M21 12h-6" />
+  </svg>
+)

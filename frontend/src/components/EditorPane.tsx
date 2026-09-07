@@ -1,9 +1,17 @@
 import { RefObject, useRef, useState } from 'react'
-import { edColors, highlight } from '../lib/highlight'
+import {
+  EDITOR_FONT,
+  EDITOR_PAD_BOTTOM,
+  EDITOR_PAD_TOP,
+  EDITOR_PAD_X,
+  edColors,
+  editorLineHeight,
+  highlight,
+} from '../lib/highlight'
 import { esc } from '../lib/markdown'
 import type { Settings } from '../lib/settings'
 import { effectiveTheme } from '../lib/theme'
-import { CodeIcon, CollapseLeftIcon, DiagramIcon, GearIcon, ImageIcon, MathIcon, TableIcon } from './icons'
+import { CodeIcon, DiagramIcon, GearIcon, ImageIcon, MathIcon, TableIcon, UploadIcon } from './icons'
 import { IconButton } from './ui'
 
 interface EditorPaneProps {
@@ -17,7 +25,6 @@ interface EditorPaneProps {
   onInsertImage: (file: File) => void
   onUploadMd: (file: File) => void
   onOpenSettings: () => void
-  onCollapse: () => void
   onToast: (msg: string) => void
   /** Панель под редактором (ИИ-консоль) — рендерится последним рядом секции. */
   bottomPanel?: React.ReactNode
@@ -38,6 +45,7 @@ export function EditorPane(props: EditorPaneProps) {
   const preRef = useRef<HTMLPreElement>(null)
   const gutRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const mdRef = useRef<HTMLInputElement>(null)
   // Файл тянут над редактором (счётчик — dragenter/dragleave прилетают от
   // дочерних элементов парами).
   const dragDepth = useRef(0)
@@ -47,13 +55,11 @@ export function EditorPane(props: EditorPaneProps) {
   const showGutter = s.lineNumbers && !wrap
   const lineCount = md.split('\n').length
 
-  const mono = "'JetBrains Mono',ui-monospace,Menlo,monospace"
-  // Целочисленная высота строки в пикселях (а не дробный множитель 1.65):
-  // дробный line-height браузеры округляют по-разному в textarea, pre и
-  // нумерации, из-за чего слои накапливают вертикальное расхождение — номера
-  // «съезжают» от строк, а каретка встаёт выше своей строки. Целое число px
-  // даёт строго одинаковую высоту строки во всех трёх слоях.
-  const lh = Math.round(s.fontSize * 1.65) + 'px'
+  // Шрифт, отступы и высота строки — из общего модуля метрик: по этой же
+  // сетке синхронная прокрутка (useScrollSync) переводит scrollTop в строку.
+  const mono = EDITOR_FONT
+  const lh = editorLineHeight(s.fontSize) + 'px'
+  const pad = EDITOR_PAD_TOP + 'px ' + EDITOR_PAD_X + 'px ' + EDITOR_PAD_BOTTOM + 'px'
 
   const onScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
     const t = e.currentTarget
@@ -146,15 +152,31 @@ export function EditorPane(props: EditorPaneProps) {
           className="pointer-events-none absolute z-20 flex items-center justify-center rounded-xl text-[13.5px] font-semibold"
           style={{
             inset: 8,
-            border: '2px dashed #d97757',
-            background: 'color-mix(in srgb, var(--warm-bg) 82%, transparent)',
-            color: 'var(--warm)',
+            border: '2px dashed var(--accent)',
+            background: 'color-mix(in srgb, var(--accent-bg) 82%, transparent)',
+            color: 'var(--accent)',
           }}
         >
           Отпустите: картинка вставится в текст, .md/.zip — откроется как документ
         </div>
       )}
-      <div className="flex h-[38px] flex-shrink-0 items-center gap-1 border-b border-hover pl-2.5 pr-2.5">
+      <div className="flex h-[38px] flex-shrink-0 items-center gap-1 border-b border-hover pl-2 pr-2.5">
+        {/* Загрузка своего документа — точка входа живёт в тулбаре (AI-10). */}
+        <input
+          ref={mdRef}
+          type="file"
+          accept=".md,.markdown,.txt,.zip,text/markdown,text/plain,application/zip"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) props.onUploadMd(f)
+            e.target.value = ''
+          }}
+        />
+        <IconButton title="Загрузить .md / .zip (заменит текущий документ)" onClick={() => mdRef.current?.click()}>
+          <UploadIcon size={15} />
+        </IconButton>
+        <div className="mx-1 h-4 w-px bg-hover" />
         <div className="flex-1" />
         <input
           ref={fileRef}
@@ -186,9 +208,6 @@ export function EditorPane(props: EditorPaneProps) {
         <IconButton title="Настройки редактора" onClick={props.onOpenSettings}>
           <GearIcon size={16} />
         </IconButton>
-        <IconButton title="Свернуть редактор" onClick={props.onCollapse}>
-          <CollapseLeftIcon />
-        </IconButton>
       </div>
       <div
         className="flex min-h-0 flex-1 transition-colors duration-200"
@@ -201,7 +220,7 @@ export function EditorPane(props: EditorPaneProps) {
             style={{
               width: 50,
               flexShrink: 0,
-              padding: '18px 12px 140px 0',
+              padding: EDITOR_PAD_TOP + 'px 12px ' + EDITOR_PAD_BOTTOM + 'px 0',
               color: C.dim,
               fontFamily: mono,
               fontSize: s.fontSize,
@@ -225,7 +244,7 @@ export function EditorPane(props: EditorPaneProps) {
               position: 'absolute',
               inset: 0,
               margin: 0,
-              padding: '18px 22px 140px 22px',
+              padding: pad,
               // Оба слоя ВСЕГДА резервируют одинаковую ширину под вертикальный
               // скроллбар (overflow-y: scroll). Иначе на длинном документе у
               // textarea появляется скроллбар и она сужается, а pre — нет; из-за
@@ -268,7 +287,7 @@ export function EditorPane(props: EditorPaneProps) {
               background: 'transparent',
               color: 'transparent',
               caretColor: C.head,
-              padding: '18px 22px 140px 22px',
+              padding: pad,
               fontFamily: mono,
               fontSize: s.fontSize,
               lineHeight: lh,

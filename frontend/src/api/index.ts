@@ -40,6 +40,14 @@ export const convertApi = {
 
 export type AiQuality = 'fast' | 'balanced' | 'quality'
 
+/** Раздел плана работы (AI-12): title/desc правит пользователь, subsections
+ *  «едут» из ответа /ai/plan прозрачно (в UI не показываются). */
+export interface PlanSection {
+  title: string
+  desc: string
+  subsections: string[]
+}
+
 export interface AiOptions {
   topic: string
   requirements: string
@@ -52,6 +60,8 @@ export interface AiOptions {
   include_images: boolean
   include_web_images: boolean
   include_code_appendix: boolean
+  /** Утверждённый план (AI-12) — агент пишет по нему и не строит свой. */
+  plan?: PlanSection[]
 }
 
 export interface AiJob {
@@ -78,6 +88,19 @@ export interface AiPricing {
 }
 
 export const aiApi = {
+  // План работы для панели на /create (AI-12): разделы с описаниями.
+  plan: (req: {
+    topic: string
+    requirements?: string
+    target_pages?: number
+    quality?: AiQuality
+    include_bibliography?: boolean
+    include_code_appendix?: boolean
+  }) =>
+    api<{ sections: PlanSection[] }>('/api/ai/plan', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
   generate: (options: AiOptions, files: File[]) => {
     const form = new FormData()
     form.append('options', JSON.stringify(options))

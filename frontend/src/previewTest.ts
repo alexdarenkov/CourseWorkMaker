@@ -165,7 +165,7 @@ async function run() {
   const md = DOCS[name] || DOCS.mixed
   let titleOverride: Partial<typeof DEFAULT_SETTINGS> = {}
   if (params.get('title') === 'mai') titleOverride = MAI_TITLE
-  let pages = paginate(md, { ...DEFAULT_SETTINGS, ...titleOverride }, () => null)
+  let { pages } = paginate(md, { ...DEFAULT_SETTINGS, ...titleOverride }, () => null)
   if (only) pages = pages.filter((_, i) => i + 1 === only)
   const root = document.getElementById('root')!
   root.innerHTML = ''

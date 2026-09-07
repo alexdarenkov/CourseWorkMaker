@@ -41,6 +41,25 @@ def test_generate_invalid_options_returns_422(client, auth, monkeypatch):
     assert resp.status_code == 422
 
 
+def test_plan_requires_auth(client):
+    resp = client.post("/api/ai/plan", json={"topic": "Тема курсовой"})
+    assert resp.status_code == 401
+
+
+def test_plan_unconfigured_returns_503(client, auth, monkeypatch):
+    monkeypatch.setattr(config, "AI_API_KEY", "")
+    headers, _ = auth()
+    resp = client.post("/api/ai/plan", headers=headers, json={"topic": "Тема курсовой"})
+    assert resp.status_code == 503
+
+
+def test_plan_invalid_topic_returns_422(client, auth, monkeypatch):
+    monkeypatch.setattr(config, "AI_API_KEY", "test-key")
+    headers, _ = auth()
+    resp = client.post("/api/ai/plan", headers=headers, json={"topic": "ab"})
+    assert resp.status_code == 422
+
+
 def test_edit_unconfigured_returns_503(client, auth, monkeypatch):
     monkeypatch.setattr(config, "AI_API_KEY", "")
     headers, _ = auth()

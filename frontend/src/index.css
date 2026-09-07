@@ -26,48 +26,67 @@
   color-scheme: dark;
 }
 
-/* Слайдеры рисуем сами: нативный трек красится по системной теме и остаётся
-   тёмным в светлой теме приложения. Трек — из палитры, бегунок — акцент. */
+/* Слайдеры рисуем сами (стиль tx-range из дизайна Texturn v2): трек с
+   заливкой до значения (процент — CSS-переменная --fill на элементе),
+   бегунок — белая пилюля. Нативный трек красится по системной теме и
+   остаётся тёмным в светлой теме приложения, поэтому свой. */
 input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
-  height: 20px;
+  height: 16px;
   background: transparent;
   cursor: pointer;
+  vertical-align: middle;
 }
 input[type='range']::-webkit-slider-runnable-track {
-  height: 6px;
+  height: 8px;
+  margin-top: 4px;
   border-radius: 999px;
-  background: var(--line);
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--fill, 40%),
+    var(--toggle-off) var(--fill, 40%),
+    var(--toggle-off) 100%
+  );
 }
 input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
+  width: 24px;
   height: 16px;
-  margin-top: -5px;
+  margin-top: -4px;
   border: none;
-  border-radius: 50%;
-  background: #d97757;
-  box-shadow: 0 1px 3px rgba(61, 57, 41, 0.25);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 input[type='range']::-moz-range-track {
-  height: 6px;
+  height: 8px;
   border-radius: 999px;
-  background: var(--line);
+  background: var(--toggle-off);
+}
+input[type='range']::-moz-range-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
 }
 input[type='range']::-moz-range-thumb {
-  width: 16px;
+  width: 24px;
   height: 16px;
   border: none;
-  border-radius: 50%;
-  background: #d97757;
-  box-shadow: 0 1px 3px rgba(61, 57, 41, 0.25);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 
-/* Палитра приложения. А4-страницы превью НЕ используют эти переменные
-   и всегда остаются белыми (как итоговый DOCX). */
+/* Палитра приложения (дизайн Texturn v2: тёплый нейтральный фон + синий
+   акцент). А4-страницы превью НЕ используют эти переменные и всегда
+   остаются белыми (как итоговый DOCX). */
 :root {
+  --accent: #117dff;
+  --accent-dark: #0e63cc;
+  --accent-bg: #e4f0ff;
   --paper: #faf9f5;
   --ink: #3d3929;
   --muted: #8a8470;
@@ -78,25 +97,35 @@ input[type='range']::-moz-range-thumb {
   --surface: #ffffff;
   --edge: #e2dfd2;
   --hover-2: #e8e5d8;
-  --warm: #b05730;
-  --warm-border: #e8d5cd;
-  --warm-bg: #faf0ec;
-  --avatar: #f3e3db;
   --seg-active: #ffffff;
   --toggle-off: #dcd9cd;
-  --preview-bg: #efede4;
-  --preview-bar: #f5f3ec;
+  --preview-bg: #eeece3; /* «стол» под листом A4 (desk) */
+  --preview-bar: #f4f1e9; /* фон тулбаров (bar-bg) */
+  --code-bg: #fffefb;
   --chip-bg: #e3dfd6;
   --chip-text: #7a7563;
-  --header-bg: rgba(250, 249, 245, 0.92);
-  --overlay: rgba(61, 57, 41, 0.35);
+  --header-bg: rgba(250, 249, 245, 0.85);
+  --header-line: #dcd8c8;
+  --split-hover: #e4e0d2;
+  --overlay: rgba(61, 57, 41, 0.42);
   --toast-bg: #3d3929;
   --toast-text: #faf9f5;
-  --danger: #b3553e;
+  --danger: #d64435;
+  --danger-dark: #c03729;
   --scroll-thumb: rgba(135, 130, 111, 0.35);
+  /* Токены подсветки markdown в статических макетах (главная). Значения
+     синхронны edColors() в lib/highlight.ts. */
+  --sx-dim: #b8b2a0;
+  --sx-head: var(--accent);
+  --sx-fence: #7a7563;
+  --sx-math: #7c5cbf;
+  --sx-caption: #5d8a52;
 }
 
 .dark {
+  --accent: #117dff;
+  --accent-dark: #0e63cc;
+  --accent-bg: hsl(213 60% 20%);
   --paper: #1b1a17;
   --ink: #e6e3d8;
   --muted: #948f7e;
@@ -107,22 +136,32 @@ input[type='range']::-moz-range-thumb {
   --surface: #242320;
   --edge: #3a372f;
   --hover-2: #363329;
-  --warm: #e08a68;
-  --warm-border: #4a3a33;
-  --warm-bg: #33291f;
-  --avatar: #3c2f28;
-  --seg-active: #403d33;
+  --seg-active: #3f3c34;
   --toggle-off: #45423a;
-  --preview-bg: #141311;
+  --preview-bg: #151410;
   --preview-bar: #201f1c;
+  --code-bg: #201f1c;
   --chip-bg: #33312a;
   --chip-text: #a39d8b;
-  --header-bg: rgba(27, 26, 23, 0.92);
-  --overlay: rgba(0, 0, 0, 0.5);
+  --header-bg: rgba(27, 26, 23, 0.85);
+  --header-line: #3a372f;
+  --split-hover: #312f28;
+  --overlay: rgba(0, 0, 0, 0.6);
   --toast-bg: #e6e3d8;
   --toast-text: #1b1a17;
-  --danger: #e07a5f;
+  --danger: #d64435;
+  --danger-dark: #c03729;
   --scroll-thumb: rgba(170, 164, 148, 0.35);
+  --sx-dim: #5f5b4e;
+  --sx-head: var(--accent);
+  --sx-fence: #9d977f;
+  --sx-math: #b39ddb;
+  --sx-caption: #86a87c;
+}
+
+/* «Магический» градиент ИИ-кнопок (единственный источник значений). */
+.ai-gradient {
+  background: linear-gradient(110deg, #3b6fe0 0%, #7b52d6 42%, #d84bb0 78%, #ff7a59 100%);
 }
 
 html,
@@ -133,6 +172,9 @@ body,
   height: 100%;
   overflow: hidden;
   background: var(--paper);
+  /* Шрифт интерфейса (дизайн v2); заголовки/логотип — Newsreader (font-serif),
+     редактор — JetBrains Mono, лист A4 — Times New Roman (не отсюда). */
+  font-family: 'Instrument Sans', system-ui, -apple-system, sans-serif;
 }
 
 * {
@@ -161,7 +203,7 @@ input:focus {
 /* Клавиатурная навигация: видимое кольцо фокуса только от Tab (не от клика). */
 button:focus-visible,
 select:focus-visible {
-  outline: 2px solid #d97757;
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -174,7 +216,7 @@ button:active {
 }
 
 ::selection {
-  background: rgba(217, 119, 87, 0.28);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 @keyframes spin {
@@ -184,4 +226,32 @@ button:active {
 }
 .animate-spin-fast {
   animation: spin 0.7s linear infinite;
+}
+
+/* Мигающий «курсор» в макете редактора на главной. */
+@keyframes tx-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.tx-caret {
+  display: inline-block;
+  width: 2px;
+  height: 13px;
+  background: var(--accent);
+  vertical-align: -2px;
+  margin-left: 1px;
+  animation: tx-caret 1.1s step-end infinite;
+}
+
+/* Каретка редактора, показанная в превью на своём месте в тексте. */
+.pv-caret {
+  width: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  animation: tx-caret 1.1s step-end infinite;
 }

@@ -2,8 +2,13 @@ import { FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authApi } from '../api'
 import { useAuth } from '../auth/AuthContext'
+import { LogInIcon } from '../components/icons'
 import { TextField } from '../components/ui'
 
+/**
+ * Вход/регистрация (дизайн v2): центрированная карточка с логотипом
+ * Newsreader, сегментом Вход/Регистрация и кнопкой «Продолжить как гость».
+ */
 export function AuthPage() {
   const navigate = useNavigate()
   const { signIn } = useAuth()
@@ -34,40 +39,21 @@ export function AuthPage() {
   }
 
   return (
-    <div
-      className="flex h-screen items-center justify-center bg-paper text-ink antialiased"
-      style={{
-        fontFamily:
-          "-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',system-ui,sans-serif",
-      }}
-    >
-      <div className="animate-pop-in w-[400px] max-w-[calc(100vw-48px)]">
-        <div className="flex items-center justify-center gap-2.5 pb-7">
-          <div
-            className="flex items-center justify-center rounded-lg bg-ink text-paper"
-            style={{
-              width: 34,
-              height: 34,
-              fontFamily: "'Times New Roman',serif",
-              fontSize: 20,
-              fontWeight: 700,
-            }}
-          >
-            T
-          </div>
-          <div className="flex flex-col gap-px">
-            <div className="font-mono text-[15px] font-bold tracking-wide">Texturn</div>
-            <div className="text-[10px] font-semibold uppercase tracking-[.08em] text-muted">
-              ГОСТ 7.32—2017
-            </div>
-          </div>
-        </div>
-
+    <div className="flex h-screen items-center justify-center overflow-y-auto bg-paper p-6 text-ink antialiased">
+      <div className="animate-pop-in w-[400px] max-w-full">
         <div
-          className="rounded-[18px] bg-surface p-6"
-          style={{ boxShadow: '0 8px 40px rgba(0,0,0,.12)' }}
+          className="rounded-[18px] border border-line bg-surface p-6"
+          style={{ boxShadow: '0 1px 2px rgba(61,57,41,.04), 0 10px 36px rgba(61,57,41,.07)' }}
         >
-          <div className="flex rounded-[10px] bg-hover p-[2.5px]">
+          <button
+            onClick={() => navigate('/')}
+            title="Texturn — на главную"
+            className="mx-auto mb-5 flex cursor-pointer border-none bg-transparent p-0 font-serif text-2xl font-bold text-ink"
+          >
+            Texturn
+          </button>
+
+          <div className="flex gap-[3px] rounded-[11px] bg-hover p-[3px]">
             {(['login', 'register'] as const).map((m) => (
               <button
                 key={m}
@@ -75,7 +61,7 @@ export function AuthPage() {
                   setMode(m)
                   setError(null)
                 }}
-                className="flex-1 cursor-pointer rounded-lg border-none py-[7px] text-[12.5px] font-semibold transition-all"
+                className="flex-1 cursor-pointer rounded-[9px] border-none py-2 text-[12.5px] font-semibold transition-all"
                 style={{
                   color: mode === m ? 'var(--ink)' : 'var(--muted)',
                   background: mode === m ? 'var(--seg-active)' : 'transparent',
@@ -87,10 +73,11 @@ export function AuthPage() {
             ))}
           </div>
 
-          <form onSubmit={submit} className="flex flex-col gap-3 pt-5">
+          <form onSubmit={submit} className="flex flex-col gap-[13px] pt-5">
             {mode === 'register' && (
               <TextField
-                label="Имя и фамилия"
+                label="Имя"
+                placeholder="Иван Иванов"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -100,6 +87,7 @@ export function AuthPage() {
             <TextField
               label="Электронная почта"
               type="email"
+              placeholder="you@university.ru"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -112,30 +100,31 @@ export function AuthPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={mode === 'register' ? 8 : undefined}
-              placeholder={mode === 'register' ? 'Минимум 8 символов' : undefined}
+              placeholder={mode === 'register' ? 'Минимум 8 символов' : '••••••••'}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             />
-            {error && (
-              <div className="text-xs" style={{ color: 'var(--danger)' }}>
-                {error}
-              </div>
-            )}
+            {error && <div className="text-xs text-danger">{error}</div>}
             <button
               type="submit"
               disabled={busy}
-              className="mt-1 cursor-pointer rounded-full border-none bg-accent py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-accent-dark disabled:opacity-60"
+              className="mt-1 flex cursor-pointer items-center justify-center gap-2 rounded-full border-none bg-accent py-3 text-[13px] font-medium text-white transition-[background,transform] duration-200 hover:-translate-y-px hover:bg-accent-dark disabled:opacity-60"
+              style={{
+                boxShadow:
+                  '0 1px 2px rgba(61,57,41,.12), 0 6px 16px color-mix(in srgb, var(--accent) 20%, transparent)',
+              }}
             >
+              <LogInIcon />
               {busy ? 'Подождите…' : mode === 'login' ? 'Войти' : 'Создать аккаунт'}
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/editor')}
+              className="flex cursor-pointer items-center justify-center gap-[7px] rounded-full border border-edge bg-transparent py-[11px] text-[13px] font-medium text-soft transition-colors hover:bg-hover"
+            >
+              ← Продолжить как гость
             </button>
           </form>
         </div>
-
-        <button
-          onClick={() => navigate('/editor')}
-          className="mx-auto mt-5 block cursor-pointer border-none bg-transparent text-[12.5px] text-muted hover:text-ink"
-        >
-          ← Продолжить без входа (как гость)
-        </button>
       </div>
     </div>
   )

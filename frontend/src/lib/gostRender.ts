@@ -27,6 +27,19 @@ const MAX_IMG_H_MM = 180
 const GDE_OPEN = '<div style="text-align:left;text-indent:12.5mm;overflow-wrap:break-word">'
 const GDE_CONT = '<div style="text-align:left;text-indent:0;overflow-wrap:break-word">'
 
+const BLANK_HTML = '<div style="line-height:' + LINE_HEIGHT + '">&nbsp;</div>'
+
+/** Атрибут строки исходника (пустая строка, если строка неизвестна). */
+function attr(line: number | undefined): string {
+  return line === undefined ? '' : ' data-l="' + line + '"'
+}
+
+/** Ставит метку строки в первый тег фрагмента. */
+function withLine(html: string, line: number | undefined): string {
+  if (line === undefined || !html.startsWith('<')) return html
+  return html.replace(/^<([a-z]+)/i, '<$1' + attr(line))
+}
+
 function fitMm(wPx: number, hPx: number): { w: number; h: number } {
   const w0 = (wPx / 96) * 25.4
   const h0 = (hPx / 96) * 25.4
@@ -66,6 +79,9 @@ export interface HeadingRec {
 
 export interface RenderedBlock {
   html: string
+  // Номер строки markdown, породившей блок (метаданные для синхронной
+  // прокрутки; на вывод не влияют — см. Block.line в markdown.ts).
+  line?: number
   breakBefore?: boolean
   isHeading?: boolean
   // Служебная свободная строка (настоящий пустой абзац DOCX); флаг — только
@@ -135,7 +151,25 @@ export function renderAll(
     ol: 0,
   }
   const out: RenderedBlock[] = []
-  const P = (html: string, extra?: Partial<RenderedBlock>) => out.push({ html, ...extra })
+  // Строка исходника, которую сейчас рендерим. P() метит ею и сам блок (якорь
+  // прокрутки), и его html — атрибутом data-l. По этому атрибуту каретка
+  // находит в готовом превью ровно тот элемент, который написан в этой строке
+  // (см. useCaretMarker): угадывать по геометрии ненадёжно.
+  let curLine: number | undefined
+  const P = (html: string, extra?: Partial<RenderedBlock>) => {
+    const e: Partial<RenderedBlock> = { ...extra }
+    // Делимые блоки и таблицы пагинатор пересобирает из этих обёрток — метка
+    // должна быть в них, иначе на второй странице элемент теряет адрес.
+    if (e.split) {
+      e.split = {
+        ...e.split,
+        openFirst: withLine(e.split.openFirst, curLine),
+        openCont: withLine(e.split.openCont, curLine),
+      }
+    }
+    if (e.table) e.table = { ...e.table, openTag: withLine(e.table.openTag, curLine) }
+    out.push({ html: withLine(html, curLine), line: curLine, ...e })
+  }
   // Свободная строка (вокруг формул/таблиц/рисунков) — НАСТОЯЩИЙ пустой
   // абзац DOCX (перенос строки, а не межабзацный интервал: нормоконтроль
   // проверяет именно пустые строки). Word показывает такой абзац и в начале
@@ -147,14 +181,26 @@ export function renderAll(
   // дедуплицируется со служебными (в DOCX это отдельный абзац).
   const blank = (hard = false) => {
     if (!hard && out.length && out[out.length - 1].isBlank) return
-    P('<div style="line-height:' + LINE_HEIGHT + '">&nbsp;</div>', hard ? undefined : { isBlank: true })
+    // Служебная свободная строка не принадлежит ни одной строке исходника:
+    // без line и без data-l, иначе якорь и каретка цеплялись бы за неё вместо
+    // самого блока (пользовательская пустая строка выводится отдельно — она
+    // строку исходника занимает и метку получает).
+    out.push({
+      html: BLANK_HTML,
+      ...(hard ? {} : { isBlank: true }),
+    })
   }
 
   // Пояснения к формуле «где …»: каждое — отдельным абзацем с красной строки
   // (как в конвертере). Абзац делим между страницами построчно (split), как
   // обычный текст, — иначе длинное пояснение целиком падало бы на следующую
   // страницу там, где Word разрывает абзац.
-  const pushGde = (gde: string[]) => {
+  // line — строка исходника пояснения: оно рендерится ВНУТРИ обработки формулы
+  // (блок «где …» съедается вместе с ней), поэтому текущая метка указывала бы
+  // на формулу, и каретка на строке пояснения не находила бы свой элемент.
+  const pushGde = (gde: string[], line?: number) => {
+    const keep = curLine
+    if (line !== undefined) curLine = line
     gde.forEach((l) => {
       const html = inline(l)
       P(GDE_OPEN + html + '</div>', {
@@ -169,6 +215,7 @@ export function renderAll(
         },
       })
     })
+    curLine = keep
   }
 
   let skipNext = false
@@ -178,6 +225,7 @@ export function renderAll(
   let afterMath = false
   for (let bi = 0; bi < blocks.length; bi++) {
     const b = blocks[bi]
+    curLine = b.line
     if (skipNext) {
       skipNext = false
       continue
@@ -285,7 +333,10 @@ export function renderAll(
       // приём, см. _list в gost.py). Список источников: номер С ТОЧКОЙ
       // («1.») — требование пользователя (вуз; выписка ГОСТ 6.16 говорит
       // «без точки»), та же вёрстка с красной строки.
-      b.items.forEach((it) => {
+      b.items.forEach((it, idx) => {
+        // Каждый пункт — отдельная строка исходника: каретка в третьем пункте
+        // должна попасть в третий пункт, а не в начало списка.
+        curLine = b.itemLines?.[idx] ?? b.line
         let marker = '–'
         if (b.type === 'ol') {
           ctx.ol++
@@ -323,11 +374,14 @@ export function renderAll(
       const capTxt = s.autoNumber ? 'Рисунок ' + ctx.fig + ' – ' + inline(cap) : inline(cap)
       blank() // свободная строка перед иллюстрацией
       // Многострочная подпись — через один межстрочный интервал (ГОСТ; в DOCX
-      // у абзаца подписи line_spacing = 1.0).
+      // у абзаца подписи line_spacing = 1.0). Подпись метится СВОЕЙ строкой
+      // исходника («Рисунок: …» стоит до картинки и своего блока не даёт).
       P(
         '<div style="text-align:center"><div style="display:flex;justify-content:center">' +
           inner +
-          '</div><div style="line-height:' +
+          '</div><div' +
+          attr(b.captionLine) +
+          ' style="line-height:' +
           LINE_HEIGHT_SINGLE +
           '">' +
           capTxt +
@@ -346,7 +400,9 @@ export function renderAll(
       P(
         '<div style="text-align:center"><div style="display:flex;justify-content:center">' +
           body +
-          '</div><div style="line-height:' +
+          '</div><div' +
+          attr(b.captionLine) +
+          ' style="line-height:' +
           LINE_HEIGHT_SINGLE +
           '">' +
           capTxt +
@@ -387,7 +443,7 @@ export function renderAll(
         '">' +
         colgroup
       const headHtml =
-        '<thead><tr>' +
+        '<thead><tr' + attr(b.rowLines?.[0]) + '>' +
         head
           .map(
             (c) =>
@@ -398,8 +454,10 @@ export function renderAll(
           .join('') +
         '</tr></thead>'
       const rowsHtml = body.map(
-        (r) =>
-          '<tr>' +
+        (r, ri) =>
+          // Строка таблицы метится своей строкой исходника: каретка внутри
+          // ячейки должна попадать в эту ячейку.
+          '<tr' + attr(b.rowLines?.[ri + 1]) + '>' +
           r
             .map(
               (c) =>
@@ -416,7 +474,9 @@ export function renderAll(
       // таблицы — отдельным blank-блоком (как в DOCX). Цельный html — для
       // замера и для случая, когда таблица помещается; payload `table`
       // пагинатор использует для деления.
-      const capHtml = cap ? '<div style="line-height:' + LINE_HEIGHT_SINGLE + '">' + cap + '</div>' : ''
+      const capHtml = cap
+        ? '<div' + attr(b.captionLine) + ' style="line-height:' + LINE_HEIGHT_SINGLE + '">' + cap + '</div>'
+        : ''
       const html =
         '<div>' + capHtml + openTag + headHtml + '<tbody>' + rowsHtml.join('') + '</tbody></table></div>'
       blank() // свободная строка перед подписью таблицы
@@ -476,7 +536,7 @@ export function renderAll(
         gde ? { keepNext: true } : undefined,
       )
       if (gde) {
-        pushGde(gde)
+        pushGde(gde, nxt?.line)
         skipNext = true
       }
       const nextIsMath = blocks[bi + (gde ? 2 : 1)]?.type === 'math'
@@ -490,8 +550,9 @@ export function renderAll(
     } else if (b.type === 'blank') {
       // Пустая строка, вставленная пользователем (двойной Enter) — в DOCX это
       // НАСТОЯЩИЙ пустой абзац, который Word показывает и в начале страницы,
-      // поэтому «жёсткая» (не гасится пагинатором).
-      blank(true)
+      // поэтому «жёсткая» (не гасится пагинатором). В отличие от служебной,
+      // занимает строку исходника — значит, метится (в ней стоит каретка).
+      P(BLANK_HTML)
     } else if (b.type === 'pagebreak') {
       // «---» — принудительный разрыв страницы.
       P('', { isPageBreak: true })

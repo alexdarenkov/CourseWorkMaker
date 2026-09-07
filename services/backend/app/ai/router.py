@@ -14,6 +14,8 @@ import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field, ValidationError
 
+from typing import Literal
+
 from ..security import get_current_user_id
 from . import config
 from .agent import CourseworkAgent, EditOptions, GenerationOptions
@@ -58,6 +60,38 @@ async def generate(
     job = store.create(uid)
     job.task = asyncio.create_task(_run_job(job, opts, uploads))
     return {"jobId": job.id}
+
+
+class PlanRequest(BaseModel):
+    """Параметры построения плана (AI-12): подмножество GenerationOptions —
+    файлы-источники к плану не прикладываются (они идут в /generate)."""
+
+    topic: str = Field(min_length=3, max_length=500)
+    requirements: str = Field(default="", max_length=8000)
+    target_pages: int = Field(default=15, ge=5, le=60)
+    quality: Literal["fast", "balanced", "quality"] = "balanced"
+    include_bibliography: bool = True
+    include_code_appendix: bool = False
+
+
+@router.post("/plan")
+async def plan(req: PlanRequest) -> dict:
+    """План работы для панели «План работы» на /create: разделы с описаниями.
+    Пользователь правит план и передаёт его в /generate полем `plan`."""
+    if not config.AI_API_KEY:
+        raise HTTPException(503, "ИИ-сервис не сконфигурирован: задайте AI_API_KEY")
+    opts = GenerationOptions.model_validate(req.model_dump())
+    agent = CourseworkAgent(opts.quality)
+    try:
+        outline = await agent.make_plan(opts)
+    except ValueError as e:
+        raise HTTPException(502, f"Не удалось построить план: {e}")
+    return {
+        "sections": [
+            {"title": s.title, "desc": s.desc, "subsections": s.subsections}
+            for s in outline.sections
+        ]
+    }
 
 
 class AnalyzePromptRequest(BaseModel):

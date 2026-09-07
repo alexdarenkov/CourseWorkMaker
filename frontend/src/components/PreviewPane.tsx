@@ -1,23 +1,30 @@
 import { RefObject } from 'react'
+import type { CaretRect } from '../hooks/useCaretMarker'
 import { LINE_HEIGHT } from '../lib/gostRender'
+import { PAGE_GAP_PX, PAGE_HEIGHT_PX, PAGE_WIDTH_PX } from '../lib/pageGeometry'
 import type { Page } from '../lib/paginate'
-import { CollapseRightIcon, FitIcon, GearIcon, MinusIcon, PlusIcon } from './icons'
+import { FitIcon, GearIcon, MinusIcon, PlusIcon } from './icons'
 import { IconButton } from './ui'
 
 interface PreviewPaneProps {
   pages: Page[]
   zoom: number
   previewRef: RefObject<HTMLDivElement>
+  /** Лента страниц: по ней меряются координаты каретки. */
+  stripRef: RefObject<HTMLDivElement>
+  /** Каретка редактора в координатах ленты (px без зума); null — не определена. */
+  caret: CaretRect | null
   onZoomIn: () => void
   onZoomOut: () => void
   onZoomFit: () => void
   onOpenSettings: () => void
-  onCollapse: () => void
 }
 
-const PW = 794
-const PH = 1123
-const GAP = 30
+// Геометрия ленты — из общего модуля: по этим же числам синхронная прокрутка
+// (useScrollSync) вычисляет, куда встать превью.
+const PW = PAGE_WIDTH_PX
+const PH = PAGE_HEIGHT_PX
+const GAP = PAGE_GAP_PX
 
 const pageStyle: React.CSSProperties = {
   width: '210mm',
@@ -68,9 +75,6 @@ export function PreviewPane(props: PreviewPaneProps) {
         <IconButton title="Настройки документа (ГОСТ)" onClick={props.onOpenSettings} hoverBg="var(--hover-2)" size={28}>
           <GearIcon size={16} />
         </IconButton>
-        <IconButton title="Свернуть превью" onClick={props.onCollapse} hoverBg="var(--hover-2)" size={28}>
-          <CollapseRightIcon />
-        </IconButton>
       </div>
       <div ref={props.previewRef} className="flex-1 overflow-auto px-6 pb-[60px] pt-7">
         <div
@@ -81,10 +85,40 @@ export function PreviewPane(props: PreviewPaneProps) {
             position: 'relative',
           }}
         >
-          <div style={{ transform: `scale(${zoom})`, transformOrigin: '0 0', width: PW }}>
+          <div
+            ref={props.stripRef}
+            style={{
+              transform: `scale(${zoom})`,
+              transformOrigin: '0 0',
+              width: PW,
+              position: 'relative',
+            }}
+          >
+            {/* Каретка редактора — на своём месте в тексте (координаты меряются
+                по отрендеренному Range, см. useCaretMarker). */}
+            {props.caret && (
+              <div
+                aria-hidden="true"
+                className="pv-caret"
+                style={{
+                  position: 'absolute',
+                  left: props.caret.x,
+                  top: props.caret.y,
+                  height: props.caret.h,
+                  // Листы тоже position:relative и идут в DOM ниже — без
+                  // z-index они бы перекрыли каретку.
+                  zIndex: 2,
+                }}
+              />
+            )}
             {pages.length ? (
               pages.map((p, i) => (
-                <div key={i} style={pageStyle} dangerouslySetInnerHTML={{ __html: p.html }} />
+                <div
+                  key={i}
+                  data-page={i}
+                  style={pageStyle}
+                  dangerouslySetInnerHTML={{ __html: p.html }}
+                />
               ))
             ) : (
               <div style={pageStyle}>

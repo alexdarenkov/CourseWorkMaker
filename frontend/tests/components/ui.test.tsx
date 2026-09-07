@@ -33,9 +33,9 @@ describe('Toggle', () => {
     const { container: off } = render(<Toggle on={false} onToggle={onToggle} />)
     fireEvent.click(off.querySelector('button')!)
     expect(onToggle).toHaveBeenCalledOnce()
-    expect(off.querySelector('button')!.style.background).not.toBe('#d97757')
+    expect(off.querySelector('button')!.style.background).not.toBe('var(--accent)')
     const { container: on } = render(<Toggle on={true} onToggle={onToggle} />)
-    expect(on.querySelector('button')!.style.background).toBe('#d97757')
+    expect(on.querySelector('button')!.style.background).toBe('var(--accent)')
   })
 })
 

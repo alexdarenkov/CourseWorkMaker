@@ -22,7 +22,6 @@ function setup(md = 'первая строка', settings: Partial<Settings> = {
     onInsertImage: vi.fn(),
     onUploadMd: vi.fn(),
     onOpenSettings: vi.fn(),
-    onCollapse: vi.fn(),
     onToast: vi.fn(),
   }
   // Обёртка со state — как в EditorPage: onChange реально меняет md.
@@ -92,12 +91,12 @@ describe('тулбар', () => {
     expect(props.onInsert).toHaveBeenLastCalledWith(expect.stringContaining('$$'))
   })
 
-  it('кнопки настроек и сворачивания', () => {
+  it('кнопки настроек и загрузки документа на месте', () => {
     const { props } = setup()
     fireEvent.click(screen.getByTitle('Настройки редактора'))
     expect(props.onOpenSettings).toHaveBeenCalledOnce()
-    fireEvent.click(screen.getByTitle('Свернуть редактор'))
-    expect(props.onCollapse).toHaveBeenCalledOnce()
+    // Загрузка .md/.zip переехала из шапки в тулбар (AI-10, редизайн v2).
+    expect(screen.getByTitle(/Загрузить \.md/)).toBeInTheDocument()
   })
 })
 

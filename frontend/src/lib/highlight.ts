@@ -1,6 +1,29 @@
 import { esc } from './markdown'
 import type { Settings } from './settings'
 
+// --- Метрики текстового слоя редактора ---
+// Ими одинаково пользуются оба слоя (textarea и подсвеченный pre, инвариант
+// «переносят строки одинаково») и синхронная прокрутка, которая по этой сетке
+// переводит scrollTop в номер строки. Расходиться им нельзя.
+
+/** Моноширинный шрифт редактора. */
+export const EDITOR_FONT = "'JetBrains Mono',ui-monospace,Menlo,monospace"
+
+/** Внутренние отступы текстового слоя, px. */
+export const EDITOR_PAD_TOP = 18
+export const EDITOR_PAD_X = 22
+export const EDITOR_PAD_BOTTOM = 140
+
+/**
+ * Высота строки редактора — ЦЕЛОЕ число px (а не дробный множитель 1.65):
+ * дробный line-height браузеры округляют по-разному в textarea, pre и
+ * нумерации, из-за чего слои накапливают вертикальное расхождение — номера
+ * «съезжают» от строк, а каретка встаёт выше своей строки.
+ */
+export function editorLineHeight(fontSize: number): number {
+  return Math.round(fontSize * 1.65)
+}
+
 export interface EditorColors {
   bg: string
   text: string
@@ -27,12 +50,12 @@ export function edColors(theme: Settings['theme']): EditorColors {
       bg: '#201f1c',
       text: '#e9e6dc',
       dim: '#5f5b4e',
-      head: '#e08a68',
+      head: '#117dff',
       chipBg: '#2e2c26',
       fence: '#9d977f',
       link: '#82aacb',
       math: '#b39ddb',
-      mark: '#e08a68',
+      mark: '#117dff',
       quote: '#8f8a76',
       caption: '#86a87c',
       gutBorder: '#2e2c26',
@@ -45,12 +68,12 @@ export function edColors(theme: Settings['theme']): EditorColors {
     bg: '#fffefb',
     text: '#3a3630',
     dim: '#b8b2a0',
-    head: '#c25e3d',
+    head: '#117dff',
     chipBg: '#f1eee4',
     fence: '#7a7563',
     link: '#3e6b8f',
     math: '#7c5cbf',
-    mark: '#c25e3d',
+    mark: '#117dff',
     quote: '#8a8470',
     caption: '#5d8a52',
     gutBorder: '#f0eee6',

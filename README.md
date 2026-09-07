@@ -68,7 +68,7 @@ CourseWorkMaker — это веб-приложение для написания
 - Нумерация страниц по центру снизу, на титульном листе номер скрыт
 
 ### ИИ-генерация
-- **План**: модель составляет структуру по ГОСТ (введение, разделы с подразделами, заключение, список источников)
+- **План**: модель составляет структуру по ГОСТ (введение, разделы с подразделами, заключение, список источников); на странице «Создать с ИИ» план можно править — переименовать, удалить и добавить разделы — до запуска генерации
 - **Генерация**: каждый раздел пишется отдельным вызовом с учётом плана и загруженных файлов
 - **Самопроверка**: «нормоконтролёр» исправляет подписи, mermaid-синтаксис и научный стиль
 - **Финальный линт**: программная проверка структуры
@@ -88,8 +88,8 @@ CourseWorkMaker — это веб-приложение для написания
 ```mermaid
 flowchart LR
   U[Браузер] --> F[frontend<br/>React + TS + Tailwind<br/>nginx :3000]
-  F -->|/api| B[backend<br/>FastAPI :8000<br/>auth · documents · convert · ai<br/>JWT-проверка]
-  B --> P[(PostgreSQL<br/>users · documents)]
+  F -->|/api| B[backend<br/>FastAPI :8000<br/>auth · convert · ai<br/>JWT-проверка]
+  B --> P[(PostgreSQL<br/>users)]
   B -->|OpenAI-совместимый API| K[Polza.ai · прокси моделей]
 ```
 
@@ -105,8 +105,8 @@ flowchart LR
 | Сервис | Стек | Назначение |
 |--------|------|------------|
 | `frontend` | React 18, TypeScript, Vite, Tailwind CSS, KaTeX, Mermaid | Редактор, ГОСТ-превью, страница входа, модалка ИИ-генерации |
-| `backend` | Python 3.12, FastAPI, SQLAlchemy, PyJWT, bcrypt, python-docx, Pandoc, LangChain, matplotlib | Монолит: авторизация, документы, конвертация MD → DOCX по ГОСТ, ИИ-генерация; проверка JWT |
-| `postgres` | PostgreSQL 16 | Единая база: таблицы `users`, `documents` |
+| `backend` | Python 3.12, FastAPI, SQLAlchemy, PyJWT, bcrypt, python-docx, Pandoc, LangChain, matplotlib | Монолит: авторизация, конвертация MD → DOCX по ГОСТ, ИИ-генерация; проверка JWT |
+| `postgres` | PostgreSQL 16 | Единая база: таблица `users` (документы хранятся в localStorage браузера) |
 
 ## Быстрый старт
 
@@ -242,7 +242,9 @@ docker compose up -d <service-name>
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| `POST` | `/api/ai/generate` | multipart: `options` (JSON) + `files[]` → `{jobId}` |
+| `POST` | `/api/ai/plan` | `{topic, requirements?, …}` → `{sections}` — план работы для страницы «Создать с ИИ» |
+| `POST` | `/api/ai/generate` | multipart: `options` (JSON, опционально с утверждённым `plan`) + `files[]` → `{jobId}` |
+| `POST` | `/api/ai/analyze-prompt` | `{topic, …}` → проверка осмысленности темы быстрой моделью (fail-open) |
 | `POST` | `/api/ai/edit` | `{instruction, markdown}` → `{jobId}` — правка всего документа, результат применяется сразу |
 | `GET` | `/api/ai/jobs/{id}` | Статус/прогресс/результат; `partial` — готовые разделы по мере генерации |
 | `POST` | `/api/ai/jobs/{id}/cancel` | Принудительная остановка задачи |
@@ -317,7 +319,7 @@ CourseWorkMaker/
 │       │   ├── auth/           # Регистрация, вход, профиль
 │       │   ├── convert/        # MD → DOCX по ГОСТ (gost.py, md_parser.py, omml.py)
 │       │   └── ai/             # ИИ-агент (agent.py, jobs.py, figures.py, matplotlib_exec.py)
-│       ├── tests/              # auth, documents, convert, ai
+│       ├── tests/              # auth, security, convert (тесты ГОСТ), ai
 │       ├── requirements.txt
 │       └── Dockerfile
 │

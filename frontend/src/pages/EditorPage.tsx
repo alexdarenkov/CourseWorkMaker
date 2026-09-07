@@ -4,17 +4,16 @@ import { ApiError } from '../api/client'
 import { convertApi } from '../api'
 import { useAuth } from '../auth/AuthContext'
 import { AiConsole } from '../components/AiConsole'
+import { AppHeader } from '../components/AppHeader'
 import { EditorPane } from '../components/EditorPane'
-import { Header } from '../components/Header'
 import { PreviewPane } from '../components/PreviewPane'
-import { CollapseLeftIcon, CollapseRightIcon } from '../components/icons'
-import { IconButton } from '../components/ui'
 import { SettingsModal } from '../components/SettingsModal'
 import { Toast } from '../components/Toast'
-import { UserModal } from '../components/UserModal'
 import { useAiJob } from '../hooks/useAiJob'
+import { useCaretMarker } from '../hooks/useCaretMarker'
 import { useDocPersistence } from '../hooks/useDocPersistence'
 import { usePagination } from '../hooks/usePagination'
+import { useScrollSync } from '../hooks/useScrollSync'
 import { useToast } from '../hooks/useToast'
 import { useZoom } from '../hooks/useZoom'
 import { addImageAsset, getAsset, referencedAssets } from '../lib/assets'
@@ -46,12 +45,15 @@ export function EditorPage() {
   const [settings, setSettings] = useState<Settings>(persisted.current.s)
   const [split, setSplit] = useState(0.46)
   const [collapsed, setCollapsed] = useState<'none' | 'editor' | 'preview'>('none')
+  // Наведение на ручку-ресайз / свёрнутую полосу: подсветка и «вырастание»
+  // язычка (дизайн v2).
+  const [splitHover, setSplitHover] = useState(false)
   const [downloading, setDownloading] = useState<false | 'docx'>(false)
   const [settingsSection, setSettingsSection] = useState<'doc' | 'ed' | null>(null)
-  const [userOpen, setUserOpen] = useState(false)
 
   const taRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
+  const stripRef = useRef<HTMLDivElement>(null)
   // Пользователь уже редактировал документ или запустил генерацию.
   const userTouched = useRef(false)
 
@@ -75,7 +77,7 @@ export function EditorPage() {
 
   /* ---------- пагинация ---------- */
 
-  const { pages, doPaginate, schedulePaginate } = usePagination(stateRef)
+  const { pages, anchors, doPaginate, schedulePaginate } = usePagination(stateRef)
 
   /* ---------- сохранение (только localStorage) ---------- */
 
@@ -84,6 +86,13 @@ export function EditorPage() {
   /* ---------- масштаб ---------- */
 
   const { setZoom, zoomValue, userZoomed, fitZoom } = useZoom(previewRef)
+
+  /* ---------- синхронная прокрутка панелей ---------- */
+
+  useScrollSync({ taRef, previewRef, anchors, zoom: zoomValue, md, settings })
+
+  // Каретка редактора, показанная в превью на своём месте в тексте.
+  const caret = useCaretMarker({ taRef, stripRef, md, zoom: zoomValue, pages })
 
   useEffect(() => {
     doPaginate()
@@ -361,50 +370,97 @@ export function EditorPage() {
     [downloading, exportName, requireAuth, showToast],
   )
 
-  const splitDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    const move = (ev: MouseEvent) => {
-      setSplit(Math.max(0.28, Math.min(0.68, ev.clientX / window.innerWidth)))
-    }
-    const up = () => {
-      document.removeEventListener('mousemove', move)
-      document.removeEventListener('mouseup', up)
-      if (!userZoomed.current) fitZoom()
-    }
-    document.addEventListener('mousemove', move)
-    document.addEventListener('mouseup', up)
-  }, [fitZoom])
+  // Ручка-ресайз (дизайн v2): перетаскивание меняет ширину; при уводе за
+  // ~20% ширины соответствующая панель сворачивается (обратно — язычок).
+  const splitDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      const up = () => {
+        document.removeEventListener('mousemove', move)
+        document.removeEventListener('mouseup', up)
+        document.body.style.userSelect = ''
+        if (!userZoomed.current) fitZoom()
+      }
+      const move = (ev: MouseEvent) => {
+        const pct = ev.clientX / window.innerWidth
+        if (pct < 0.2) {
+          setCollapsed('editor')
+          setSplitHover(false)
+          up()
+          return
+        }
+        if (pct > 0.8) {
+          setCollapsed('preview')
+          setSplitHover(false)
+          up()
+          return
+        }
+        setSplit(Math.max(0.22, Math.min(0.78, pct)))
+      }
+      document.body.style.userSelect = 'none'
+      document.addEventListener('mousemove', move)
+      document.addEventListener('mouseup', up)
+    },
+    [fitZoom],
+  )
 
-  return (
+  const expand = useCallback(() => {
+    setCollapsed('none')
+    setSplitHover(false)
+    setSplit(0.46)
+  }, [])
+
+  /** Свёрнутая полоса с язычком-стрелкой (в стиле iOS): наведение растит
+   *  язычок, клик разворачивает панель обратно (дизайн v2). */
+  const collapsedStrip = (side: 'editor' | 'preview') => (
     <div
-      className="flex h-screen flex-col bg-paper text-ink antialiased"
+      onClick={expand}
+      onMouseEnter={() => setSplitHover(true)}
+      onMouseLeave={() => setSplitHover(false)}
+      title={side === 'editor' ? 'Открыть редактор' : 'Открыть превью'}
+      className="relative z-10 flex cursor-pointer items-center overflow-visible transition-colors"
       style={{
-        fontFamily:
-          "-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',system-ui,sans-serif",
+        width: 14,
+        flexShrink: 0,
+        justifyContent: side === 'editor' ? 'flex-start' : 'flex-end',
+        background: splitHover ? 'var(--split-hover)' : 'transparent',
+        borderRight: side === 'editor' ? '1px solid var(--line)' : 'none',
+        borderLeft: side === 'preview' ? '1px solid var(--line)' : 'none',
       }}
     >
-      <Header
-        downloading={downloading}
-        onDownload={download}
-        onUploadMd={uploadMd}
+      <span
+        className="flex flex-shrink-0 items-center justify-center text-white transition-all duration-200"
+        style={{
+          width: splitHover ? 36 : 18,
+          height: 52,
+          marginLeft: side === 'editor' ? -2 : 0,
+          marginRight: side === 'preview' ? -2 : 0,
+          borderRadius: side === 'editor' ? '0 10px 10px 0' : '10px 0 0 10px',
+          background: splitHover ? 'var(--accent)' : 'var(--edge)',
+          boxShadow: `${side === 'editor' ? 2 : -2}px 0 8px rgba(0,0,0,.2)`,
+        }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+          {side === 'editor' ? <path d="M9 5l7 7-7 7" /> : <path d="M15 5l-7 7 7 7" />}
+        </svg>
+      </span>
+    </div>
+  )
+
+  return (
+    <div className="flex h-screen flex-col bg-paper text-ink antialiased">
+      <AppHeader
+        active="editor"
+        docx={{ downloading: Boolean(downloading), onDownload: () => void download('docx') }}
         theme={effectiveTheme(settings.theme)}
         onToggleTheme={() =>
           onSettingChange('theme', effectiveTheme(settings.theme) === 'dark' ? 'light' : 'dark')
         }
-        onOpenUser={() => {
-          if (user) setUserOpen(true)
-          else navigate('/login')
-        }}
-        userName={user?.name ?? null}
       />
 
       <div className="flex min-h-0 flex-1">
         {collapsed === 'editor' ? (
-          <div className="flex w-[40px] flex-shrink-0 flex-col items-center border-r border-line bg-surface pt-2">
-            <IconButton title="Развернуть редактор" onClick={() => setCollapsed('none')}>
-              <CollapseRightIcon />
-            </IconButton>
-          </div>
+          collapsedStrip('editor')
         ) : (
           <EditorPane
             md={md}
@@ -418,7 +474,6 @@ export function EditorPage() {
             onUploadMd={uploadMd}
             onToast={showToast}
             onOpenSettings={() => setSettingsSection('ed')}
-            onCollapse={() => setCollapsed('editor')}
             bottomPanel={
               <AiConsole
                 currentMd={md}
@@ -435,20 +490,29 @@ export function EditorPage() {
         {collapsed === 'none' && (
           <div
             onMouseDown={splitDown}
-            title="Перетащите, чтобы изменить размер"
-            className="z-10 flex flex-shrink-0 cursor-col-resize items-center justify-center bg-transparent"
-            style={{ width: 9, margin: '0 -4px' }}
-          />
+            onMouseEnter={() => setSplitHover(true)}
+            onMouseLeave={() => setSplitHover(false)}
+            title="Перетащите, чтобы изменить размер (до упора — свернуть панель)"
+            className="z-10 flex flex-shrink-0 cursor-col-resize items-center justify-center transition-colors"
+            style={{ width: 9, background: splitHover ? 'var(--split-hover)' : 'transparent' }}
+          >
+            <span
+              className="rounded-full transition-all duration-200"
+              style={{
+                width: 3,
+                height: splitHover ? 44 : 36,
+                background: splitHover ? 'var(--accent)' : 'var(--edge)',
+              }}
+            />
+          </div>
         )}
         {collapsed === 'preview' ? (
-          <div className="flex w-[40px] flex-shrink-0 flex-col items-center border-l border-line pt-2" style={{ background: 'var(--preview-bar)' }}>
-            <IconButton title="Развернуть превью" onClick={() => setCollapsed('none')} hoverBg="var(--hover-2)">
-              <CollapseLeftIcon />
-            </IconButton>
-          </div>
+          collapsedStrip('preview')
         ) : (
           <PreviewPane
             pages={pages}
+            stripRef={stripRef}
+            caret={caret}
             zoom={zoomValue}
             previewRef={previewRef}
             onZoomIn={() => {
@@ -464,7 +528,6 @@ export function EditorPage() {
               fitZoom()
             }}
             onOpenSettings={() => setSettingsSection('doc')}
-            onCollapse={() => setCollapsed('preview')}
           />
         )}
       </div>
@@ -478,7 +541,6 @@ export function EditorPage() {
           onClose={() => setSettingsSection(null)}
         />
       )}
-      {userOpen && <UserModal onClose={() => setUserOpen(false)} onToast={showToast} />}
       {toast && <Toast message={toast} />}
     </div>
   )

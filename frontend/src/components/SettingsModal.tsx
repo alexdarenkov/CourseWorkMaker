@@ -63,10 +63,10 @@ export function SettingsModal({ settings: s, section, onChange, onClose }: Setti
 
   return (
     <ModalShell onClose={onClose} width={620} maxHeight="84vh">
-        <div className="flex items-center px-[22px] pb-3.5 pt-[18px]">
-          <div className="text-[16.5px] font-bold tracking-tight">
-            {section === 'doc' ? 'Настройки документа · ГОСТ' : 'Настройки редактора'}
-          </div>
+        <div className="flex items-center px-6 pb-3.5 pt-5">
+          <h2 className="m-0 font-serif text-2xl font-normal" style={{ letterSpacing: '-.015em' }}>
+            {section === 'doc' ? 'Настройки документа' : 'Настройки редактора'}
+          </h2>
           <div className="flex-1" />
           <ModalCloseButton onClose={onClose} />
         </div>
@@ -82,7 +82,7 @@ export function SettingsModal({ settings: s, section, onChange, onClose }: Setti
                 </SettingRow>
               ))}
               {s.titlePage && (
-                <div className="mb-1 mt-3.5 flex flex-col rounded-xl border border-edge bg-paper px-4 pb-4 pt-2">
+                <div className="mb-1 mt-3.5 flex flex-col rounded-xl border border-edge bg-surface px-4 pb-4 pt-2">
                   <div className="pb-0.5 pt-2 text-[11px] font-bold uppercase tracking-[.08em] text-faint">
                     Титульный лист
                   </div>
@@ -178,7 +178,12 @@ export function SettingsModal({ settings: s, section, onChange, onClose }: Setti
                     step={1}
                     value={s.fontSize}
                     onChange={(e) => onChange('fontSize', +e.target.value)}
-                    style={{ width: 120, accentColor: '#d97757' }}
+                    style={
+                      {
+                        width: 120,
+                        '--fill': `${Math.round(((s.fontSize - 12) / 6) * 100)}%`,
+                      } as React.CSSProperties
+                    }
                   />
                   <span
                     className="text-right text-[12.5px] text-soft"

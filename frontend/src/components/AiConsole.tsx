@@ -93,7 +93,7 @@ export function AiConsole({
         title="Развернуть ИИ-консоль"
         className="flex h-8 w-full flex-shrink-0 cursor-pointer items-center gap-2 border-t border-line bg-paper px-3.5 text-[11.5px] font-medium text-muted hover:text-ink"
       >
-        <span style={{ color: 'var(--warm)' }}>
+        <span style={{ color: 'var(--accent)' }}>
           {running ? <Spinner size={13} /> : <SparklesIcon size={13} />}
         </span>
         <span>
@@ -141,7 +141,7 @@ export function AiConsole({
         // Гость или пустой документ: подсказка без кнопок — генерация и
         // загрузка запускаются только из навигации в шапке (AI-10).
         <div className="flex items-center gap-2.5 py-2">
-          <span style={{ color: 'var(--warm)' }}>
+          <span style={{ color: 'var(--accent)' }}>
             <SparklesIcon size={13} />
           </span>
           <span className="text-[11.5px] text-muted">
@@ -178,7 +178,7 @@ export function AiConsole({
             className="w-full resize-none border-none bg-transparent px-1 pb-0.5 pt-2 text-[12.5px] leading-[1.45] text-ink outline-none disabled:opacity-60"
           />
           {error && (
-            <div className="px-1 pb-0.5 text-[11px] font-medium" style={{ color: '#c0392b' }}>
+            <div className="px-1 pb-0.5 text-[11px] font-medium text-danger">
               {error}
             </div>
           )}
@@ -199,7 +199,7 @@ export function AiConsole({
               onClick={() => void send()}
               disabled={running}
               title="Отправить правку (Enter)"
-              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-none bg-accent text-white transition-colors hover:bg-accent-dark disabled:opacity-40"
+              className="ai-gradient flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-none text-white transition-[filter] hover:brightness-110 disabled:opacity-40"
             >
               {running ? <Spinner size={13} /> : <ArrowUpIcon size={14} />}
             </button>

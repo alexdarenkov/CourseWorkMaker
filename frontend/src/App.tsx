@@ -3,6 +3,7 @@ import { AuthPage } from './pages/AuthPage'
 import { CreatePage } from './pages/CreatePage'
 import { EditorPage } from './pages/EditorPage'
 import { HomePage } from './pages/HomePage'
+import { ProfilePage } from './pages/ProfilePage'
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
       <Route path="/editor" element={<EditorPage />} />
       <Route path="/create" element={<CreatePage />} />
       <Route path="/login" element={<AuthPage />} />
+      <Route path="/profile" element={<ProfilePage />} />
       <Route path="*" element={<HomePage />} />
     </Routes>
   )

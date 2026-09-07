@@ -266,3 +266,84 @@ describe('полный отчёт (фикстура, копия services/convert
 // Тип используется в сигнатурах выше — проверка, что экспорт не сломан.
 const _typecheck: RenderedBlock | null = null
 void _typecheck
+
+describe('метки строк исходника в выводе (адреса каретки в превью)', () => {
+  // Пункт спеки для каретки в превью ещё не заведён — когда появится, ID
+  // нужно проставить в название describe.
+  const MD = [
+    '# Раздел', // 0
+    '', // 1
+    'Абзац.', // 2
+    '', // 3
+    'Таблица: Сравнение', // 4
+    '| A | B |', // 5
+    '|---|---|', // 6
+    '| 1 | 2 |', // 7
+    '', // 8
+    'Рисунок: Схема', // 9
+    '```mermaid', // 10
+    'flowchart LR', // 11
+    '```', // 12
+    '', // 13
+    '- первый', // 14
+    '- второй', // 15
+  ].join('\n')
+
+  it('блок помечен строкой, в которой он написан', () => {
+    const out = render(MD).out
+    expect(out[0].html).toContain('data-l="0"')
+    expect(out[1].html).toContain('data-l="2"')
+  })
+
+  it('подпись рисунка помечена СВОЕЙ строкой, а не строкой блока', () => {
+    const fig = render(MD).out.find((b) => b.html.includes('Рисунок 1'))!
+    // Сам блок — строка ```mermaid, подпись — строка «Рисунок: …» выше.
+    expect(fig.html).toContain('data-l="10"')
+    expect(fig.html).toContain('data-l="9" style="line-height:' + LINE_HEIGHT_SINGLE + '"')
+  })
+
+  it('подпись таблицы помечена своей строкой', () => {
+    const tbl = render(MD).out.find((b) => b.table)!
+    expect(tbl.table!.caption).toContain('data-l="4"')
+  })
+
+  it('каждая строка таблицы помечена своей строкой исходника', () => {
+    const tbl = render(MD).out.find((b) => b.table)!
+    expect(tbl.table!.headHtml).toContain('<tr data-l="5">')
+    // Разделитель «|---|» в вывод не идёт: у первой строки тела — строка 7.
+    expect(tbl.table!.rows[0]).toContain('<tr data-l="7">')
+  })
+
+  it('пункты перечисления помечены каждый своей строкой', () => {
+    const out = render(MD).out
+    expect(out.find((b) => b.html.includes('первый'))!.html).toContain('data-l="14"')
+    expect(out.find((b) => b.html.includes('второй'))!.html).toContain('data-l="15"')
+  })
+
+  it('пояснение «где …» помечено своей строкой, а не строкой формулы', () => {
+    // Пояснение рендерится ВНУТРИ обработки формулы (она съедает его блок) —
+    // без явной пометки оно получало строку формулы, и каретка на нём
+    // не находила своего элемента.
+    const out = render('$$E = mc^2$$\nгде E — энергия').out
+    expect(out.find((b) => b.html.includes('E = mc'))!.line).toBe(0)
+    expect(out.find((b) => b.html.includes('энергия'))!.html).toContain('data-l="1"')
+  })
+
+  it('делимый блок несёт метку и в обёртке продолжения (разрез между страницами)', () => {
+    const code = render('```python\nx = 1\n```').out.find((b) => b.split)!
+    expect(code.split!.openFirst).toContain('data-l="0"')
+    expect(code.split!.openCont).toContain('data-l="0"')
+  })
+
+  it('служебная свободная строка метки не несёт, пользовательская — несёт', () => {
+    const out = render(MD).out
+    const service = out.filter((b) => b.isBlank)
+    expect(service.length).toBeGreaterThan(0)
+    service.forEach((b) => expect(b.html).not.toContain('data-l'))
+    // Двойной перенос — пустая строка пользователя: у неё своя строка.
+    const user = render('Абзац.\n\n\nВторой.').out.find(
+      (b) => b.html.includes('&nbsp;') && !b.isBlank,
+    )!
+    expect(user.html).toContain('data-l="1"')
+  })
+})

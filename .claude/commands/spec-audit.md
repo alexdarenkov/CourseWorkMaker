@@ -18,7 +18,7 @@ description: Сверка диффа со спеками и тестами пе�
 3а. Если дифф меняет поток из docs/architecture/flows/ или структуру
    сервисов — проверь, что схема обновлена в том же изменении.
 4. Если дифф трогает фикстуру kalman-report.md — проверь, что изменены ОБЕ
-   копии (frontend/src/fixtures/ и services/converter/tests/data/).
+   копии (frontend/src/fixtures/ и services/backend/tests/convert/data/).
 5. Если в диффе есть решение, достойное ADR (были альтернативы, откат прежнего
    поведения), а ADR нет — предложи создать.
 

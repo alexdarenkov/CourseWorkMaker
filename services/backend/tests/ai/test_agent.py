@@ -108,6 +108,40 @@ def test_outline_truncates_excessive_sections():
     assert len(body) == 8
 
 
+def test_outline_keeps_descriptions_including_structural():
+    # AI-12: desc содержательных И структурных разделов из пользовательского
+    # плана сохраняется (пользователь мог уточнить их на /create).
+    outline = normalize_outline(
+        Outline(
+            sections=[
+                OutlineSection(title="Введение", desc="Цель и задачи по методичке"),
+                OutlineSection(title="Обзор методов", desc="Сравнение трёх подходов"),
+            ]
+        ),
+        opts(),
+    )
+    by_title = {s.title: s.desc for s in outline.sections}
+    assert by_title["Введение"] == "Цель и задачи по методичке"
+    assert by_title["Обзор методов"] == "Сравнение трёх подходов"
+
+
+def test_generation_options_accept_user_plan():
+    # AI-12: /generate принимает утверждённый план полем plan.
+    o = opts(plan=[{"title": "Анализ", "desc": "Разбор данных", "subsections": ["Метрики"]}])
+    assert o.plan is not None and o.plan[0].title == "Анализ"
+    normalized = normalize_outline(Outline(sections=o.plan), o)
+    assert [s.title for s in normalized.sections][:2] == ["Введение", "Анализ"]
+
+
+def test_user_plan_without_content_sections_rejected():
+    # generate() с планом из одних структурных элементов падает ДО вызова LLM.
+    o = opts(plan=[{"title": "Введение"}, {"title": "Заключение"}])
+    normalized = normalize_outline(Outline(sections=o.plan), o)
+    from app.ai.agent import is_structural
+
+    assert not any(not is_structural(s.title) for s in normalized.sections)
+
+
 # ---------- ensure_single_heading ----------
 
 def test_heading_prepended_when_missing():

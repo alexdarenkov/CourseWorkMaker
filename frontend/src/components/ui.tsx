@@ -25,13 +25,13 @@ export function ModalShell({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={'animate-pop-in bg-surface text-ink ' + panelClassName}
+        className={'animate-pop-in bg-paper text-ink ' + panelClassName}
         style={{
           width,
           maxWidth: 'calc(100vw - 48px)',
           maxHeight,
-          borderRadius: 18,
-          boxShadow: '0 24px 64px rgba(61,57,41,.28)',
+          borderRadius: 20,
+          boxShadow: '0 24px 64px rgba(61,57,41,.2)',
         }}
       >
         {children}
@@ -53,22 +53,22 @@ export function ModalCloseButton({ onClose }: { onClose: () => void }) {
   )
 }
 
+/** Тумблер v2: приплюснутая пилюля (дорожка 36×16, ползунок 20×12). */
 export function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
     <button
       onClick={onToggle}
-      className="relative flex-shrink-0 cursor-pointer rounded-[13px] border-none p-0 transition-colors duration-200"
-      style={{ width: 42, height: 25, background: on ? '#d97757' : 'var(--toggle-off)' }}
+      className="relative flex-shrink-0 cursor-pointer rounded-full border-none p-0 transition-colors duration-200"
+      style={{ width: 36, height: 16, background: on ? 'var(--accent)' : 'var(--toggle-off)' }}
     >
       <span
-        className="absolute rounded-[10px] bg-white transition-transform duration-200"
+        className="absolute rounded-full bg-white transition-transform duration-200"
         style={{
-          top: 2.5,
-          left: 2.5,
+          top: 2,
+          left: 2,
           width: 20,
-          height: 20,
-          boxShadow: '0 1px 3px rgba(0,0,0,.2)',
-          transform: `translateX(${on ? 17 : 0}px)`,
+          height: 12,
+          transform: `translateX(${on ? 12 : 0}px)`,
         }}
       />
     </button>

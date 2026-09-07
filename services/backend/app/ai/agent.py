@@ -61,6 +61,18 @@ MAX_MERMAID_LINES = 20
 OUTLINE_ATTEMPTS = 2
 
 
+class OutlineSection(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    # Краткое описание раздела (1 предложение): показывается в панели плана
+    # на /create и служит «ТЗ» раздела при генерации.
+    desc: str = Field(default="", max_length=500)
+    subsections: list[str] = []
+
+
+class Outline(BaseModel):
+    sections: list[OutlineSection]
+
+
 class GenerationOptions(BaseModel):
     topic: str = Field(min_length=3, max_length=500)
     requirements: str = Field(default="", max_length=8000)
@@ -73,20 +85,14 @@ class GenerationOptions(BaseModel):
     include_images: bool = False
     include_web_images: bool = False
     include_code_appendix: bool = False
+    # Утверждённый пользователем план (/create, панель «План работы»):
+    # при наличии агент пишет по нему и НЕ строит свой (AI-12).
+    plan: list[OutlineSection] | None = Field(default=None, max_length=30)
 
 
 class EditOptions(BaseModel):
     instruction: str = Field(min_length=3, max_length=4000)
     markdown: str = Field(min_length=1, max_length=300_000)
-
-
-class OutlineSection(BaseModel):
-    title: str
-    subsections: list[str] = []
-
-
-class Outline(BaseModel):
-    sections: list[OutlineSection]
 
 
 MD_DIALECT = """Диалект Markdown редактора (соблюдай строго):
@@ -152,13 +158,19 @@ def normalize_outline(outline: Outline, opts: GenerationOptions) -> Outline:
     body = [s for s in outline.sections if not is_structural(s.title)]
     body = body[:MAX_CONTENT_SECTIONS]
 
-    sections = [OutlineSection(title="Введение")]
+    def structural(title: str, match) -> OutlineSection:
+        # Описание структурного элемента из исходного плана сохраняем
+        # (пользователь мог уточнить его на /create), подразделы — убираем.
+        src = next((s for s in outline.sections if match(s.title)), None)
+        return OutlineSection(title=title, desc=src.desc if src else "")
+
+    sections = [structural("Введение", is_intro)]
     sections.extend(body)
-    sections.append(OutlineSection(title="Заключение"))
+    sections.append(structural("Заключение", is_conclusion))
     if opts.include_bibliography:
-        sections.append(OutlineSection(title="Список использованных источников"))
+        sections.append(structural("Список использованных источников", is_bibliography))
     if opts.include_code_appendix:
-        sections.append(OutlineSection(title="Приложение А. Листинг кода"))
+        sections.append(structural("Приложение А. Листинг кода", is_appendix))
     return Outline(sections=sections)
 
 
@@ -410,8 +422,16 @@ class CourseworkAgent:
         source_context: str,
         progress: ProgressCb,
     ) -> str:
-        await progress("Составление плана работы", 0.05)
-        outline = await self._make_outline(opts, source_context)
+        if opts.plan:
+            # План утверждён пользователем на /create — не строим свой (AI-12).
+            outline = normalize_outline(Outline(sections=opts.plan), opts)
+            if not any(not is_structural(s.title) for s in outline.sections):
+                raise ValueError(
+                    "План не содержит содержательных разделов — добавьте хотя бы один"
+                )
+        else:
+            await progress("Составление плана работы", 0.05)
+            outline = await self._make_outline(opts, source_context)
 
         total = len(outline.sections)
         body_parts: list[str] = []
@@ -499,6 +519,11 @@ class CourseworkAgent:
 
     # ---------- шаги ----------
 
+    async def make_plan(self, opts: GenerationOptions, context: str = "") -> Outline:
+        """План для панели «План работы» на /create (AI-12): та же логика, что
+        и внутренний шаг генерации, но результат уходит пользователю на правку."""
+        return await self._make_outline(opts, context)
+
     async def _make_outline(self, opts: GenerationOptions, context: str) -> Outline:
         """План работы: строгий JSON, ретрай на битый ответ, нормализация."""
         sections_hint = max(3, min(6, opts.target_pages // 5 + 2))
@@ -513,10 +538,11 @@ class CourseworkAgent:
 
 Составь план: «Введение», {sections_hint - 2}–{sections_hint} содержательных раздела
 (каждый с 2–4 подразделами), «Заключение»{", «Список использованных источников»" if opts.include_bibliography else ""}.
-Названия разделов — без номеров.
+Названия разделов — без номеров. Для каждого раздела добавь desc — одно
+предложение о том, что в нём будет.
 
 Формат ответа:
-{{"sections": [{{"title": "Введение", "subsections": []}}, {{"title": "...", "subsections": ["...", "..."]}}, ...]}}"""
+{{"sections": [{{"title": "Введение", "desc": "...", "subsections": []}}, {{"title": "...", "desc": "...", "subsections": ["...", "..."]}}, ...]}}"""
         messages = [SystemMessage(content=system), HumanMessage(content=user)]
 
         last_error: Exception | None = None
@@ -546,7 +572,9 @@ class CourseworkAgent:
         on_chunk: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
         plan = "\n".join(
-            f"- {s.title}" + (f" ({', '.join(s.subsections)})" if s.subsections else "")
+            f"- {s.title}"
+            + (f" — {s.desc}" if s.desc else "")
+            + (f" ({', '.join(s.subsections)})" if s.subsections else "")
             for s in outline.sections
         )
         words = section_word_target(opts, outline, section)
@@ -621,7 +649,7 @@ class CourseworkAgent:
 {"Материалы студента:" + chr(10) + context if context else ""}
 
 Сейчас напиши ТОЛЬКО раздел «{section.title}»{" с подразделами: " + ", ".join(section.subsections) if section.subsections else ""}.
-{task}
+{"О чём раздел: " + section.desc + chr(10) if section.desc and not is_structural(section.title) else ""}{task}
 
 Начни ровно со строки `# {section.title}`. Внутри раздела не используй других
 заголовков `#` 1-го уровня. Верни только markdown, без пояснений и без обрамляющих ```."""

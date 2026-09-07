@@ -1,6 +1,7 @@
 import katex from 'katex'
 
-export type Block =
+/** Вид блока без служебных полей (дискриминант — `type`). */
+export type BlockKind =
   | { type: 'h1' | 'h2' | 'h3'; text: string }
   | { type: 'p'; text: string }
   | { type: 'ul' | 'ol'; items: string[] }
@@ -13,6 +14,25 @@ export type Block =
   | { type: 'pagebreak' }
   | { type: 'blank' }
   | { type: 'hr' }
+
+/**
+ * Блок + его место в исходнике (0-based). Метаданные для синхронной прокрутки
+ * и каретки в превью: на рендер и раскладку не влияют, в конвертере DOCX
+ * аналога не нужно.
+ *   line/endLine — первая и последняя строки, которые съел блок;
+ *   captionLine  — строка подписи «Рисунок:/Таблица:»: она идёт ДО блока и
+ *                  своего блока не даёт, но в выводе ей соответствует подпись;
+ *   rowLines     — строка исходника для каждой СОХРАНЁННОЙ строки таблицы
+ *                  (разделитель `|---|` выброшен, поэтому номера не подряд);
+ *   itemLines    — строка исходника для каждого пункта перечисления.
+ */
+export type Block = BlockKind & {
+  line?: number
+  endLine?: number
+  captionLine?: number
+  rowLines?: number[]
+  itemLines?: number[]
+}
 
 export function esc(t: string): string {
   return String(t)
@@ -90,7 +110,25 @@ export function parseMD(md: string): Block[] {
   let pendingTab: string | null = null
   let m: RegExpMatchArray | null
 
+  // Номер исходной строки проставляется не в каждом `blocks.push`, а пачкой:
+  // все блоки, добавленные за итерацию, помечаются строкой, с которой эта
+  // итерация началась. Тело цикла из-за `continue` до конца не доходит,
+  // поэтому пометка делается в начале СЛЕДУЮЩЕЙ итерации и после цикла.
+  let markLine = 0
+  let marked = 0
+  const stamp = () => {
+    for (; marked < blocks.length; marked++) {
+      blocks[marked].line = markLine
+      blocks[marked].endLine = Math.max(markLine, i - 1)
+    }
+  }
+  // Строка подписи, ждущей свой рисунок/таблицу (сама блока не даёт).
+  let pendingFigLine = 0
+  let pendingTabLine = 0
+
   while (i < lines.length) {
+    stamp()
+    markLine = i
     const t = lines[i].trim()
     if (!t) {
       // Пустые строки: каждая ЛИШНЯЯ (сверх одной, разделяющей абзацы) даёт
@@ -113,7 +151,12 @@ export function parseMD(md: string): Block[] {
       }
       i++
       if (lang === 'mermaid') {
-        blocks.push({ type: 'mermaid', code: buf.join('\n'), caption: pendingFig })
+        blocks.push({
+          type: 'mermaid',
+          code: buf.join('\n'),
+          caption: pendingFig,
+          captionLine: pendingFig !== null ? pendingFigLine : undefined,
+        })
         pendingFig = null
       } else {
         blocks.push({ type: 'code', lang, code: buf.join('\n') })
@@ -152,56 +195,73 @@ export function parseMD(md: string): Block[] {
       continue
     }
     if ((m = t.match(/^!\[([^\]]*)\]\(([^)]*)\)$/))) {
-      blocks.push({ type: 'figure', alt: m[1], src: m[2], caption: pendingFig })
+      blocks.push({
+        type: 'figure',
+        alt: m[1],
+        src: m[2],
+        caption: pendingFig,
+        captionLine: pendingFig !== null ? pendingFigLine : undefined,
+      })
       pendingFig = null
       i++
       continue
     }
     if ((m = t.match(/^Рисунок:\s*(.*)$/i))) {
       pendingFig = m[1]
+      pendingFigLine = i
       i++
       continue
     }
     if ((m = t.match(/^Таблица:\s*(.*)$/i))) {
       pendingTab = m[1]
+      pendingTabLine = i
       i++
       continue
     }
     if (t.startsWith('|')) {
-      const rows: string[] = []
+      const rows: { text: string; line: number }[] = []
       while (i < lines.length && lines[i].trim().startsWith('|')) {
-        rows.push(lines[i].trim())
+        rows.push({ text: lines[i].trim(), line: i })
         i++
       }
-      const cells = rows
-        .filter((r) => !/^\|[\s:\-|]+\|?$/.test(r))
-        .map((r) =>
-          r
-            .replace(/^\|/, '')
-            .replace(/\|$/, '')
-            .split('|')
-            .map((c) => c.trim()),
-        )
-      blocks.push({ type: 'table', rows: cells, caption: pendingTab })
+      const kept = rows.filter((r) => !/^\|[\s:\-|]+\|?$/.test(r.text))
+      const cells = kept.map((r) =>
+        r.text
+          .replace(/^\|/, '')
+          .replace(/\|$/, '')
+          .split('|')
+          .map((c) => c.trim()),
+      )
+      blocks.push({
+        type: 'table',
+        rows: cells,
+        caption: pendingTab,
+        captionLine: pendingTab !== null ? pendingTabLine : undefined,
+        rowLines: kept.map((r) => r.line),
+      })
       pendingTab = null
       continue
     }
     if (/^[-*]\s+/.test(t)) {
       const items: string[] = []
+      const itemLines: number[] = []
       while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
         items.push(lines[i].trim().replace(/^[-*]\s+/, ''))
+        itemLines.push(i)
         i++
       }
-      blocks.push({ type: 'ul', items })
+      blocks.push({ type: 'ul', items, itemLines })
       continue
     }
     if (/^\d+[.)]\s+/.test(t)) {
       const items: string[] = []
+      const itemLines: number[] = []
       while (i < lines.length && /^\d+[.)]\s+/.test(lines[i].trim())) {
         items.push(lines[i].trim().replace(/^\d+[.)]\s+/, ''))
+        itemLines.push(i)
         i++
       }
-      blocks.push({ type: 'ol', items })
+      blocks.push({ type: 'ol', items, itemLines })
       continue
     }
     if (t.startsWith('>')) {
@@ -234,6 +294,7 @@ export function parseMD(md: string): Block[] {
     }
     blocks.push({ type: 'p', text: joinPara(buf) })
   }
+  stamp()
   return dropBlankAfterHeading(blocks)
 }
 

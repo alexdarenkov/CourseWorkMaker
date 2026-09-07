@@ -187,3 +187,75 @@ describe('inline-разметка', () => {
     expect(esc('<a href="x">&')).toBe('&lt;a href=&quot;x&quot;&gt;&amp;')
   })
 })
+
+describe('Номер исходной строки в блоках (якоря синхронной прокрутки)', () => {
+  // Пункт спеки для синхронной прокрутки ещё не заведён — когда появится,
+  // ID нужно проставить в название describe.
+  const MD = [
+    '# Введение', // 0
+    '', // 1
+    'Первый абзац.', // 2
+    '', // 3
+    '', // 4
+    '```python', // 5
+    'x = 1', // 6
+    '```', // 7
+    '', // 8
+    'Таблица: Данные', // 9
+    '| A | B |', // 10
+    '|---|---|', // 11
+    '| 1 | 2 |', // 12
+    '', // 13
+    '- пункт', // 14
+    '- пункт', // 15
+  ].join('\n')
+
+  it('каждый блок помечен строкой, с которой он начинается', () => {
+    expect(parseMD(MD).map((b) => [b.line, b.type])).toEqual([
+      [0, 'h1'],
+      [2, 'p'],
+      // Прогон пустых строк 3–4: лишняя пустая помечена началом прогона.
+      [3, 'blank'],
+      // Многострочные блоки — строкой открывающего маркера, а не последней.
+      [5, 'code'],
+      // Строка-подпись «Таблица: …» сама блока не даёт: таблица помечена
+      // первой строкой самой таблицы.
+      [10, 'table'],
+      [14, 'ul'],
+    ])
+  })
+
+  it('номера строк строго возрастают — иначе якоря не отсортированы', () => {
+    const lines = parseMD(MD).map((b) => b.line!)
+    for (let i = 1; i < lines.length; i++) expect(lines[i]).toBeGreaterThan(lines[i - 1])
+  })
+
+  it('пустой документ блоков не даёт', () => {
+    expect(parseMD('')).toEqual([])
+  })
+
+  it('блок знает свою последнюю строку', () => {
+    const b = parseMD(MD)
+    expect(b[3]).toMatchObject({ type: 'code', line: 5, endLine: 7 })
+    expect(b[4]).toMatchObject({ type: 'table', endLine: 12 })
+    expect(b[5]).toMatchObject({ type: 'ul', line: 14, endLine: 15 })
+  })
+
+  it('подпись «Таблица:/Рисунок:» помнит свою строку', () => {
+    const t = parseMD(MD).find((b) => b.type === 'table')!
+    expect(t.captionLine).toBe(9)
+    const fig = parseMD('Рисунок: Схема\n```mermaid\nflowchart LR\n```')
+    expect(fig[0]).toMatchObject({ type: 'mermaid', line: 1, captionLine: 0 })
+  })
+
+  it('без подписи captionLine не проставляется', () => {
+    expect(parseMD('| A |\n|---|\n| 1 |')[0].captionLine).toBeUndefined()
+  })
+
+  it('строки таблицы и пункты перечисления знают свои строки исходника', () => {
+    const t = parseMD(MD).find((b) => b.type === 'table')!
+    // Разделитель «|---|» выброшен, поэтому номера не подряд.
+    expect(t.rowLines).toEqual([10, 12])
+    expect(parseMD(MD).find((b) => b.type === 'ul')!.itemLines).toEqual([14, 15])
+  })
+})
