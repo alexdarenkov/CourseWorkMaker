@@ -4,7 +4,7 @@ import katex from 'katex'
 export type BlockKind =
   | { type: 'h1' | 'h2' | 'h3'; text: string }
   | { type: 'p'; text: string }
-  | { type: 'ul' | 'ol'; items: string[] }
+  | { type: 'ul' | 'ol'; items: string[]; markers?: string[] }
   | { type: 'code'; lang: string; code: string }
   | { type: 'mermaid'; code: string; caption: string | null }
   | { type: 'math'; code: string }
@@ -56,7 +56,7 @@ export function inline(text: string): string {
   let t = String(text)
   t = t.replace(/`([^`]+)`/g, (_, c) => {
     ph.push(
-      '<span style="font-family:\'Courier New\',Courier,monospace;font-size:13pt">' +
+      '<span style="font-family:\'Courier New\',Courier,monospace;font-size:12pt">' +
         esc(c) +
         '</span>',
     )
@@ -264,6 +264,20 @@ export function parseMD(md: string): Block[] {
       blocks.push({ type: 'ol', items, itemLines })
       continue
     }
+    // Буквенные маркеры сохраняем из исходника, не смешивая с числовым счётчиком.
+    if (/^[абвгдежиклмнпрстуфхцшщэюя]\)\s+/.test(t)) {
+      const items: string[] = []
+      const markers: string[] = []
+      const itemLines: number[] = []
+      while (i < lines.length && /^[абвгдежиклмнпрстуфхцшщэюя]\)\s+/.test(lines[i].trim())) {
+        const line = lines[i].trim()
+        markers.push(line.slice(0, 2))
+        items.push(line.replace(/^[абвгдежиклмнпрстуфхцшщэюя]\)\s+/, ''))
+        itemLines.push(i++)
+      }
+      blocks.push({ type: 'ul', items, markers, itemLines })
+      continue
+    }
     if (t.startsWith('>')) {
       const buf: string[] = []
       while (i < lines.length && lines[i].trim().startsWith('>')) {
@@ -285,7 +299,7 @@ export function parseMD(md: string): Block[] {
       const nt = lines[i].trim()
       if (
         !nt ||
-        /^(#{1,6}\s|```|\$\$|\||[-*]\s|\d+[.)]\s|>|!\[|---)/.test(nt) ||
+        /^(#{1,6}\s|```|\$\$|\||[-*]\s|\d+[.)]\s|[абвгдежиклмнпрстуфхцшщэюя]\)\s|>|!\[|---)/.test(nt) ||
         /^(Рисунок|Таблица):/i.test(nt)
       )
         break

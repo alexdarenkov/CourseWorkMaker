@@ -40,8 +40,17 @@ describe('GL-9: migrateSettings — старый титульник → своб
   })
 
   it('настройки без старых полей возвращаются как есть', () => {
-    const raw = { fontSize: 16 }
+    const raw = { fontSize: 14 }
     expect(migrateSettings(raw)).toBe(raw)
+  })
+
+  it('кегль вне 11…16 px приводится к границе', () => {
+    expect(migrateSettings({ fontSize: 18 })).toEqual({ fontSize: 16 })
+    expect(migrateSettings({ fontSize: 10 })).toEqual({ fontSize: 11 })
+  })
+
+  it('временный ключ editorFontPt отбрасывается', () => {
+    expect(migrateSettings({ editorFontPt: 12, fontSize: 14 })).toEqual({ fontSize: 14 })
   })
 })
 

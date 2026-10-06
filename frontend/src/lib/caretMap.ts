@@ -44,7 +44,7 @@ export function visibleText(src: string): string {
 
 /** Длина маркера в начале строки (#, дефис, номер пункта, цитата) — в вывод он не идёт. */
 export function lineMarkerLength(src: string): number {
-  const m = /^\s*(?:#{1,6}\s+|[-*]\s+|\d+[.)]\s+|>\s?)/.exec(src)
+  const m = /^\s*(?:#{1,6}\s+|[-*]\s+|\d+[.)]\s+|[абвгдежиклмнпрстуфхцшщэюя]\)\s+|>\s?)/.exec(src)
   return m ? m[0].length : 0
 }
 

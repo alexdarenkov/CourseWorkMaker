@@ -93,6 +93,7 @@ describe('тулбар', () => {
 
   it('кнопки настроек и загрузки документа на месте', () => {
     const { props } = setup()
+    expect(screen.queryByText('Текст')).toBeNull()
     fireEvent.click(screen.getByTitle('Настройки редактора'))
     expect(props.onOpenSettings).toHaveBeenCalledOnce()
     // Загрузка .md/.zip переехала из шапки в тулбар (AI-10, редизайн v2).

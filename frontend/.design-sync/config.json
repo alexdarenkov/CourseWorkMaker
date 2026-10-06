@@ -1,0 +1,54 @@
+{
+  "projectId": "e0f72743-9054-44f8-a3fe-5e45bf913326",
+  "shape": "package",
+  "pkg": "md2docx-frontend",
+  "globalName": "Texturn",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": ".design-sync/compiled.css",
+  "extraFonts": [".design-sync/fonts-src/brand-fonts.css"],
+  "readmeHeader": ".design-sync/conventions.md",
+  "componentSrcMap": {
+    "BrowserRouter": null,
+    "AuthProvider": null,
+    "ModalShell": "src/components/ui.tsx",
+    "ModalCloseButton": "src/components/ui.tsx",
+    "Toggle": "src/components/ui.tsx",
+    "SettingRow": "src/components/ui.tsx",
+    "TextField": "src/components/ui.tsx",
+    "SegButton": "src/components/ui.tsx",
+    "IconButton": "src/components/ui.tsx",
+    "AppHeader": "src/components/AppHeader.tsx",
+    "GearIcon": "src/components/icons.tsx",
+    "ImageIcon": "src/components/icons.tsx",
+    "TableIcon": "src/components/icons.tsx",
+    "CodeIcon": "src/components/icons.tsx",
+    "DiagramIcon": "src/components/icons.tsx",
+    "MathIcon": "src/components/icons.tsx",
+    "MinusIcon": "src/components/icons.tsx",
+    "PlusIcon": "src/components/icons.tsx",
+    "FitIcon": "src/components/icons.tsx",
+    "CloseIcon": "src/components/icons.tsx",
+    "CheckIcon": "src/components/icons.tsx",
+    "DownloadIcon": "src/components/icons.tsx",
+    "SunIcon": "src/components/icons.tsx",
+    "MoonIcon": "src/components/icons.tsx",
+    "UploadIcon": "src/components/icons.tsx",
+    "Spinner": "src/components/icons.tsx",
+    "SquarePenIcon": "src/components/icons.tsx",
+    "LogInIcon": "src/components/icons.tsx",
+    "LogOutIcon": "src/components/icons.tsx",
+    "PenIcon": "src/components/icons.tsx",
+    "UserIcon": "src/components/icons.tsx"
+  },
+  "provider": {
+    "component": "BrowserRouter",
+    "inner": {
+      "component": "AuthProvider"
+    }
+  },
+  "overrides": {
+    "ModalShell": { "cardMode": "single" },
+    "AppHeader": { "cardMode": "column" },
+    "SettingRow": { "cardMode": "column" }
+  }
+}

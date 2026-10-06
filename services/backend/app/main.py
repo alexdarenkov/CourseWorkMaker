@@ -1,33 +1,21 @@
-"""Монолит CourseWorkMaker: auth + convert + ai в одном FastAPI-приложении.
-JWT проверяется здесь же (замена gateway, SEC-1). Документы пользователь
-хранит локально (localStorage браузера + экспорт .zip) — серверного CRUD нет."""
-
-import os
-from contextlib import asynccontextmanager
+"""Бэкенд CourseWorkMaker: конвертация MD → DOCX в одном FastAPI-приложении.
+Аккаунтов нет, БД нет: документы пользователь хранит локально (localStorage
+браузера + импорт .zip), сервер только конвертирует."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import config
-from .ai.router import router as ai_router
-from .auth.router import router as auth_router
+from .limits import RequestSizeLimit
 from .convert.router import router as convert_router
-from .db import Base, engine
 
+app = FastAPI(title="CourseWorkMaker backend", version="1.0.0")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Создание таблиц (users) при старте. Тесты гоняют на SQLite.
-    Base.metadata.create_all(bind=engine)
-    yield
-
-
-app = FastAPI(title="CourseWorkMaker backend", version="1.0.0", lifespan=lifespan)
+app.add_middleware(RequestSizeLimit)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
@@ -36,9 +24,7 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "aiConfigured": bool(os.environ.get("AI_API_KEY"))}
+    return {"status": "ok"}
 
 
-app.include_router(auth_router)
 app.include_router(convert_router)
-app.include_router(ai_router)

@@ -9,8 +9,10 @@ import { Block, esc, inline, isStructural, katexHtml, splitGde } from './markdow
 // Courier New: 1,1333 em → 12 пт × 1,7 = 20,4 пт. В конвертере та же
 // величина — LINE_PT/FREE_LINE (24,15 пт) в gost.py. Менять только парой.
 export const LINE_HEIGHT = '1.725' // основной текст, полуторный интервал
-export const LINE_HEIGHT_CODE = '1.7' // листинг Courier New 12пт, полуторный
+export const LINE_HEIGHT_CODE = '1.7' // весь листинг, включая пустые строки; DOCX: Code Block
 export const LINE_HEIGHT_SINGLE = '1.15' // одинарный интервал (подписи рисунков и таблиц)
+// Остаток строки абзаца с inline-рисунком в Word: половина одинарной строки.
+export const IMAGE_BASELINE_GAP_PT = 14 * Number(LINE_HEIGHT_SINGLE) / 2
 export const LINE_PT = '24.15pt' // высота одной строки = свободная строка
 
 // Заголовки — БЕЗ дополнительных интервалов до/после: между заголовком и
@@ -68,7 +70,7 @@ function fitSvg(svg: string): string {
       .replace(/max-width:\s*[^;"']+;?/, '')
     return `<svg width="100%" height="100%"${a}>`
   })
-  return `<div style="width:${box.w.toFixed(1)}mm;height:${box.h.toFixed(1)}mm">${patched}</div>`
+  return `<div style="width:${box.w.toFixed(4)}mm;height:${box.h.toFixed(4)}mm">${patched}</div>`
 }
 
 export interface HeadingRec {
@@ -100,7 +102,7 @@ export interface RenderedBlock {
   // Пагинатор делит его построчно между страницами, чтобы блок выше страницы
   // не налезал на нижнее поле. В Word такой блок разбивается сам.
   //   openFirst/openCont — обёртка первой части и продолжения (у абзаца у
-  //     продолжения снят красная строка, у кода — рамка одинаковая);
+  //     продолжения снят красная строка, у кода — отступы одинаковые);
   //   sep — чем склеиваются строки внутри части ('\n' для кода в pre-wrap,
   //     '<br>' для абзаца);
   //   measureOpen — обёртка для замера высоты одной строки по отдельности.
@@ -219,10 +221,7 @@ export function renderAll(
   }
 
   let skipNext = false
-  // Предыдущий выведенный блок — формула (граница формульной группы уже
-  // оформлена): подряд идущие формулы НЕ разделяются свободными строками,
-  // переносы остаются только между текстом и формулами.
-  let afterMath = false
+  // Соседние формулы разделяет одна общая служебная строка.
   for (let bi = 0; bi < blocks.length; bi++) {
     const b = blocks[bi]
     curLine = b.line
@@ -230,8 +229,6 @@ export function renderAll(
       skipNext = false
       continue
     }
-    const prevMath = afterMath
-    afterMath = false
     // Сквозная нумерация списков продолжается только через подряд идущие
     // 'ol'-блоки (пустые строки между пунктами не прерывают список), любой
     // другой блок обнуляет счётчик.
@@ -337,7 +334,7 @@ export function renderAll(
         // Каждый пункт — отдельная строка исходника: каретка в третьем пункте
         // должна попасть в третий пункт, а не в начало списка.
         curLine = b.itemLines?.[idx] ?? b.line
-        let marker = '–'
+        let marker = b.markers?.[idx] ?? '-'
         if (b.type === 'ol') {
           ctx.ol++
           marker = ctx.inBib && s.bibliography ? ctx.ol + '.' : ctx.ol + ')'
@@ -371,13 +368,14 @@ export function renderAll(
             '<img src="' + esc(resolved!) + '" style="width:' + box.w.toFixed(1) + 'mm;height:' + box.h.toFixed(1) + 'mm" alt="">'
         }
       }
-      const capTxt = s.autoNumber ? 'Рисунок ' + ctx.fig + ' – ' + inline(cap) : inline(cap)
+      const capTxt = s.autoNumber ? 'Рисунок ' + ctx.fig + (cap ? ' - ' + inline(cap) : '') : inline(cap)
       blank() // свободная строка перед иллюстрацией
       // Многострочная подпись — через один межстрочный интервал (ГОСТ; в DOCX
       // у абзаца подписи line_spacing = 1.0). Подпись метится СВОЕЙ строкой
       // исходника («Рисунок: …» стоит до картинки и своего блока не даёт).
       P(
-        '<div style="text-align:center"><div style="display:flex;justify-content:center">' +
+        '<div style="text-align:center"><div style="display:flex;justify-content:center;padding-bottom:' +
+          (inner.startsWith('<img') ? IMAGE_BASELINE_GAP_PT : 0) + 'pt">' +
           inner +
           '</div><div' +
           attr(b.captionLine) +
@@ -395,10 +393,11 @@ export function renderAll(
       const body = svg
         ? '<div style="display:flex;justify-content:center;max-width:100%;overflow:hidden">' + fitSvg(svg) + '</div>'
         : '<div style="width:125mm;height:62mm;border:1px dashed #999;display:flex;align-items:center;justify-content:center;color:#888;font-size:11pt">Построение схемы…</div>'
-      const capTxt = s.autoNumber ? 'Рисунок ' + ctx.fig + ' – ' + inline(cap) : inline(cap)
+      const capTxt = s.autoNumber ? 'Рисунок ' + ctx.fig + (cap ? ' - ' + inline(cap) : '') : inline(cap)
       blank() // свободная строка перед схемой
       P(
-        '<div style="text-align:center"><div style="display:flex;justify-content:center">' +
+        '<div style="text-align:center"><div style="display:flex;justify-content:center;padding-bottom:' +
+          (svg ? IMAGE_BASELINE_GAP_PT : 0) + 'pt">' +
           body +
           '</div><div' +
           attr(b.captionLine) +
@@ -411,15 +410,13 @@ export function renderAll(
       blank() // свободная строка после подписи схемы
     } else if (b.type === 'table') {
       ctx.tab++
-      const cap = b.caption
-        ? 'Таблица ' + ctx.tab + ' – ' + inline(b.caption)
-        : s.autoNumber
-          ? 'Таблица ' + ctx.tab
-          : ''
+      const cap = s.autoNumber
+        ? 'Таблица ' + ctx.tab + (b.caption ? ' - ' + inline(b.caption) : '')
+        : inline(b.caption || '')
       const head = b.rows[0] || []
       const body = b.rows.slice(1)
       // Широкая таблица — уменьшенный кегль (ГОСТ 6.6 допускает); правило
-      // синхронизировано с конвертером: >6 колонок → 12 пт.
+      // синхронизировано с конвертером: >3 колонок → 12 пт.
       const cols = b.rows.reduce((m, r) => Math.max(m, r.length), 0)
       // Ширины колонок — единый с конвертером детерминированный алгоритм
       // (вес = длина самого длинного содержимого, кламп 3..30) и фиксированная
@@ -437,7 +434,7 @@ export function renderAll(
         '</colgroup>'
       const openTag =
         '<table style="border-collapse:collapse;width:100%;table-layout:fixed;font-size:' +
-        (cols <= 6 ? 14 : 12) +
+        (cols <= 3 ? 14 : 12) +
         'pt;line-height:' +
         LINE_HEIGHT +
         '">' +
@@ -484,7 +481,7 @@ export function renderAll(
       blank() // свободная строка после таблицы
     } else if (b.type === 'code') {
       const open =
-        '<div style="border:1px solid #000;padding:3mm 4mm;font-family:\'Courier New\',Courier,monospace;font-size:12pt;line-height:' +
+        '<div style="padding:3mm 4mm;font-family:\'Courier New\',Courier,monospace;font-size:12pt;line-height:' +
         LINE_HEIGHT_CODE +
         ';white-space:pre-wrap;word-break:break-word;text-align:left">'
       const close = '</div>'
@@ -496,7 +493,7 @@ export function renderAll(
       blank(true)
       // Цельный html для случая, когда листинг помещается; payload `split`
       // пагинатор использует для построчного деления длинного листинга.
-      // В замере — прозрачные боковые рамки: ширина текста должна совпадать с
+      // В замере — те же боковые отступы: ширина текста должна совпадать с
       // реальным боксом до пикселя, иначе перенос строк (и высота) отличается.
       P(open + lines.join('\n') + close, {
         split: {
@@ -508,7 +505,7 @@ export function renderAll(
           measureOpen:
             '<div style="font-family:\'Courier New\',Courier,monospace;font-size:12pt;line-height:' +
             LINE_HEIGHT_CODE +
-            ';white-space:pre-wrap;word-break:break-word;padding:0 4mm;border-left:1px solid transparent;border-right:1px solid transparent">',
+            ';white-space:pre-wrap;word-break:break-word;padding:0 4mm">',
         },
       })
       blank()
@@ -522,13 +519,12 @@ export function renderAll(
         : ''
       // Свободная строка до формулы и после неё; если за формулой идёт «где …» —
       // свободная строка после пояснения (ГОСТ 6.8), и формула не отрывается
-      // от пояснения при переносе страницы (keepNext). Формулы ПОДРЯД идут
-      // без свободных строк между собой (пустая строка только вокруг группы).
+      // от пояснения при переносе страницы (keepNext). Между формулами — одна строка.
       const nxt = blocks[bi + 1]
       const gde = nxt && nxt.type === 'p' ? splitGde(nxt.text) : null
-      if (!prevMath) blank()
+      blank()
       P(
-        '<div style="display:flex;align-items:center"><div style="flex:1;text-align:center;overflow:hidden">' +
+        '<div style="display:flex;align-items:center"><div data-display-math style="flex:1;min-width:0;text-align:center;overflow:visible">' +
           k +
           '</div>' +
           numHtml +
@@ -539,11 +535,8 @@ export function renderAll(
         pushGde(gde, nxt?.line)
         skipNext = true
       }
-      const nextIsMath = blocks[bi + (gde ? 2 : 1)]?.type === 'math'
-      // После «где» перенос ставится всегда (это текст); после «голой» формулы —
-      // только если дальше не формула.
-      if (gde || !nextIsMath) blank()
-      afterMath = true
+      // blank() объединит её со строкой перед следующим объектом.
+      blank()
     } else if (b.type === 'quote') {
       // Как в DOCX: отступ слева без вертикальных зазоров.
       P('<div style="padding-left:12.5mm;font-style:italic">' + inline(b.text) + '</div>')

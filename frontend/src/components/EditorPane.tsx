@@ -9,6 +9,7 @@ import {
   highlight,
 } from '../lib/highlight'
 import { esc } from '../lib/markdown'
+import { replaceEditorSelection } from '../lib/editorInsert'
 import type { Settings } from '../lib/settings'
 import { effectiveTheme } from '../lib/theme'
 import { CodeIcon, DiagramIcon, GearIcon, ImageIcon, MathIcon, TableIcon, UploadIcon } from './icons'
@@ -26,8 +27,6 @@ interface EditorPaneProps {
   onUploadMd: (file: File) => void
   onOpenSettings: () => void
   onToast: (msg: string) => void
-  /** Панель под редактором (ИИ-консоль) — рендерится последним рядом секции. */
-  bottomPanel?: React.ReactNode
 }
 
 const SNIPPETS = {
@@ -59,6 +58,10 @@ export function EditorPane(props: EditorPaneProps) {
   // сетке синхронная прокрутка (useScrollSync) переводит scrollTop в строку.
   const mono = EDITOR_FONT
   const lh = editorLineHeight(s.fontSize) + 'px'
+  const fontPx = s.fontSize
+  // Тонкое сглаживание вместо браузерного по умолчанию: на macOS JetBrains Mono
+  // иначе выглядит полужирным. На метрики глифов не влияет — слоям можно.
+  const smoothing = { WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale' } as const
   const pad = EDITOR_PAD_TOP + 'px ' + EDITOR_PAD_X + 'px ' + EDITOR_PAD_BOTTOM + 'px'
 
   const onScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -75,13 +78,10 @@ export function EditorPane(props: EditorPaneProps) {
   const wrapSelection = (ta: HTMLTextAreaElement, marker: string) => {
     const st = ta.selectionStart
     const en = ta.selectionEnd
-    const scrollTop = ta.scrollTop
     const sel = ta.value.slice(st, en)
-    // setRangeText сохраняет нативный undo-стек textarea.
-    ta.setRangeText(marker + sel + marker, st, en, 'end')
+    replaceEditorSelection(ta, marker + sel + marker)
     if (st === en) ta.setSelectionRange(st + marker.length, st + marker.length)
     else ta.setSelectionRange(st + marker.length, en + marker.length)
-    ta.scrollTop = scrollTop
     props.onChange(ta.value)
   }
 
@@ -106,8 +106,8 @@ export function EditorPane(props: EditorPaneProps) {
       e.preventDefault()
       const ta = e.currentTarget
       const st = ta.selectionStart
-      const en = ta.selectionEnd
-      props.onChange(md.slice(0, st) + '  ' + md.slice(en))
+      replaceEditorSelection(ta, '  ')
+      props.onChange(ta.value)
       requestAnimationFrame(() => ta.setSelectionRange(st + 2, st + 2))
       return
     }
@@ -128,7 +128,7 @@ export function EditorPane(props: EditorPaneProps) {
 
   return (
     <section
-      className="relative flex min-h-0 flex-col border-r border-line bg-surface"
+      className="relative flex min-h-0 flex-col border-r border-line bg-paper"
       style={{ width: props.width, minWidth: 340 }}
       onDragEnter={(e) => {
         if (!hasFiles(e)) return
@@ -160,7 +160,7 @@ export function EditorPane(props: EditorPaneProps) {
           Отпустите: картинка вставится в текст, .md/.zip — откроется как документ
         </div>
       )}
-      <div className="flex h-[38px] flex-shrink-0 items-center gap-1 border-b border-hover pl-2 pr-2.5">
+      <div className="editor-toolbar">
         {/* Загрузка своего документа — точка входа живёт в тулбаре (AI-10). */}
         <input
           ref={mdRef}
@@ -173,10 +173,14 @@ export function EditorPane(props: EditorPaneProps) {
             e.target.value = ''
           }}
         />
-        <IconButton title="Загрузить .md / .zip (заменит текущий документ)" onClick={() => mdRef.current?.click()}>
-          <UploadIcon size={15} />
+        <IconButton
+          title="Загрузить .md / .zip (заменит текущий документ)"
+          onClick={() => mdRef.current?.click()}
+          size={24}
+          className="tb-icon"
+        >
+          <UploadIcon size={14} />
         </IconButton>
-        <div className="mx-1 h-4 w-px bg-hover" />
         <div className="flex-1" />
         <input
           ref={fileRef}
@@ -189,24 +193,24 @@ export function EditorPane(props: EditorPaneProps) {
             e.target.value = ''
           }}
         />
-        <IconButton title="Вставить изображение с устройства" onClick={() => fileRef.current?.click()}>
-          <ImageIcon />
+        <IconButton title="Вставить изображение с устройства" onClick={() => fileRef.current?.click()} size={24} className="tb-icon">
+          <ImageIcon size={14} />
         </IconButton>
-        <IconButton title="Вставить таблицу" onClick={() => props.onInsert(SNIPPETS.table)}>
-          <TableIcon />
+        <IconButton title="Вставить таблицу" onClick={() => props.onInsert(SNIPPETS.table)} size={24} className="tb-icon">
+          <TableIcon size={14} />
         </IconButton>
-        <IconButton title="Вставить блок кода" onClick={() => props.onInsert(SNIPPETS.code)}>
-          <CodeIcon />
+        <IconButton title="Вставить блок кода" onClick={() => props.onInsert(SNIPPETS.code)} size={24} className="tb-icon">
+          <CodeIcon size={14} />
         </IconButton>
-        <IconButton title="Вставить схему (mermaid)" onClick={() => props.onInsert(SNIPPETS.mermaid)}>
-          <DiagramIcon />
+        <IconButton title="Вставить схему (mermaid)" onClick={() => props.onInsert(SNIPPETS.mermaid)} size={24} className="tb-icon">
+          <DiagramIcon size={14} />
         </IconButton>
-        <IconButton title="Вставить формулу (LaTeX)" onClick={() => props.onInsert(SNIPPETS.math)}>
-          <MathIcon />
+        <IconButton title="Вставить формулу (LaTeX)" onClick={() => props.onInsert(SNIPPETS.math)} size={24} className="tb-icon">
+          <MathIcon size={14} />
         </IconButton>
-        <div className="mx-1 h-4 w-px bg-hover" />
-        <IconButton title="Настройки редактора" onClick={props.onOpenSettings}>
-          <GearIcon size={16} />
+        <span className="toolbar-sep" />
+        <IconButton title="Настройки редактора" onClick={props.onOpenSettings} size={24} className="tb-icon">
+          <GearIcon size={14} />
         </IconButton>
       </div>
       <div
@@ -223,7 +227,8 @@ export function EditorPane(props: EditorPaneProps) {
               padding: EDITOR_PAD_TOP + 'px 12px ' + EDITOR_PAD_BOTTOM + 'px 0',
               color: C.dim,
               fontFamily: mono,
-              fontSize: s.fontSize,
+              ...smoothing,
+              fontSize: fontPx,
               lineHeight: lh,
               borderRight: '1px solid ' + C.gutBorder,
             }}
@@ -255,7 +260,8 @@ export function EditorPane(props: EditorPaneProps) {
               overflowX: wrap ? 'hidden' : 'auto',
               overflowY: 'scroll',
               fontFamily: mono,
-              fontSize: s.fontSize,
+              ...smoothing,
+              fontSize: fontPx,
               lineHeight: lh,
               whiteSpace: wrap ? 'pre-wrap' : 'pre',
               overflowWrap: wrap ? 'break-word' : 'normal',
@@ -263,7 +269,7 @@ export function EditorPane(props: EditorPaneProps) {
               pointerEvents: 'none',
             }}
             dangerouslySetInnerHTML={{
-              __html: (s.syntaxHl ? highlight(md, C) : esc(md)) + '\n',
+              __html: s.syntaxHl ? highlight(md + '\n', C) : esc(md) + '\n',
             }}
           />
           <textarea
@@ -289,7 +295,8 @@ export function EditorPane(props: EditorPaneProps) {
               caretColor: C.head,
               padding: pad,
               fontFamily: mono,
-              fontSize: s.fontSize,
+              ...smoothing,
+              fontSize: fontPx,
               lineHeight: lh,
               whiteSpace: wrap ? 'pre-wrap' : 'pre',
               overflowWrap: wrap ? 'break-word' : 'normal',
@@ -302,7 +309,6 @@ export function EditorPane(props: EditorPaneProps) {
           />
         </div>
       </div>
-      {props.bottomPanel}
     </section>
   )
 }

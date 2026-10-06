@@ -259,3 +259,14 @@ describe('Номер исходной строки в блоках (якоря �
     expect(parseMD(MD).find((b) => b.type === 'ul')!.itemLines).toEqual([14, 15])
   })
 })
+
+describe('Паритет MVP с DOCX', () => {
+  it('сохраняет пустые крайние столбцы таблицы', () => {
+    const table = parseMD('||B||\n|---|---|---|\n|1|2|3|')[0]
+    expect(table.type).toBe('table')
+    if (table.type === 'table') expect(table.rows).toEqual([['', 'B', ''], ['1', '2', '3']])
+  })
+  it('сохраняет формулу внутри жирного текста', () => {
+    expect(inline('**$x^2$**')).toContain('katex')
+  })
+})

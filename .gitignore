@@ -25,6 +25,15 @@ lerna-debug.log*
 frontend/tsconfig.tsbuildinfo
 *.tsbuildinfo
 
+# --- design-sync (Claude Design) — machine state, regenerated each run.
+# config.json/NOTES.md/conventions.md/previews/ + the app-specific entry.ts,
+# compiled.css and fonts-src/ under frontend/.design-sync/ ARE committed.
+frontend/.ds-sync/
+frontend/ds-bundle/
+frontend/.design-sync/.cache/
+frontend/.design-sync/learnings/
+frontend/.design-sync/node_modules
+
 # --- Python ---
 __pycache__/
 *.py[cod]

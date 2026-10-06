@@ -185,7 +185,7 @@ def test_formula_gde_each_line_with_indent():
 def test_list_markers_dash_and_digit_paren():
     doc = _doc("- первый пункт;\n- второй пункт.\n\n1. раз;\n2. два.\n")
     joined = "\n".join(p.text for p in doc.paragraphs)
-    assert f"–{NBSP}первый пункт;" in joined
+    assert f"-{NBSP}первый пункт;" in joined
     assert f"1){NBSP}раз;" in joined and f"2){NBSP}два." in joined
     # Пункт — с красной строки как обычный абзац; продолжение длинного пункта
     # переносится к левому полю (без висячего отступа и табуляций).
@@ -280,8 +280,8 @@ def test_kalman_report_builds_by_gost():
     assert breaks >= 8
 
     # Подписи таблиц и рисунков с автонумерацией.
-    assert "Таблица 1 – Сравнение методов оценивания состояния динамических систем" in joined
-    assert "Рисунок 1 – Классификация методов оптимальной фильтрации" in joined
+    assert "Таблица 1 - Сравнение методов оценивания состояния динамических систем" in joined
+    assert "Рисунок 1 - Классификация методов оптимальной фильтрации" in joined
 
     # Формулы нумеруются по порядку, номер в круглых скобках.
     assert "(1)" in joined and "(2)" in joined
@@ -290,3 +290,43 @@ def test_kalman_report_builds_by_gost():
     src = next(p for p in doc.paragraphs if "Калман Р. Э." in p.text)
     assert src.text.startswith(f"1.{NBSP}")
     assert round(src.paragraph_format.first_line_indent.mm, 1) == 12.5
+
+
+def test_mvp13_code_blank_lines_and_breaks_have_code_font():
+    code = 'first = 1\n\n\nsecond = 2\n'
+    doc = _doc('```python\n' + code + '```')
+    p = doc.tables[0].cell(0, 0).paragraphs[0]
+    assert p.text == code.rstrip('\n')
+    assert p.style.font.name == 'Courier New'
+    assert p.style.font.size == Pt(12)
+    assert p.style.paragraph_format.line_spacing == 1.5
+    # Проверяем именно переносы, а не только видимые символы: в прежнем
+    # экспорте переносы лежали в отдельных run без шрифта и кегля.
+    breaks = [r for r in p.runs if '<w:br' in r._r.xml]
+    assert breaks
+    assert all(r.font.name == 'Courier New' and r.font.size == Pt(12) for r in breaks)
+
+
+def test_mvp13_generated_heading_is_not_selected_by_heading_style():
+    doc = _doc('# Реферат\n\nТекст.\n\n# Введение\n\nТекст.', _settings(toc=True))
+    for title in ('РЕФЕРАТ', 'СОДЕРЖАНИЕ'):
+        p = next(p for p in doc.paragraphs if p.text == title)
+        assert p.style.name == 'Unlisted Heading'
+        assert p.style.base_style.name == 'Normal'
+        assert p.style.font.bold is True
+        assert p.style.paragraph_format.keep_with_next is True
+        assert 'w:val="9"' in p._p.xml
+    intro = next(p for p in doc.paragraphs if p.text == 'ВВЕДЕНИЕ')
+    assert intro.style.name == 'Heading 1'
+
+
+def test_code_listing_has_no_borders():
+    from docx.oxml.ns import qn
+
+    doc = _doc("```python\nx = 1\n```")
+    table = doc.tables[0]
+    borders = table._tbl.tblPr.find(qn("w:tblBorders"))
+    assert borders is not None
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        assert borders.find(qn(f"w:{edge}")).get(qn("w:val")) == "nil"
+    assert table.cell(0, 0).paragraphs[0].text == "x = 1"

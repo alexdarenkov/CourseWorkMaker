@@ -1,3 +1,5 @@
+import { splitHtmlAtHeight } from './splitHtml'
+import { wrapDisplayMath } from './mathWrap'
 import type { Settings } from './settings'
 import { parseMD } from './markdown'
 import {
@@ -11,6 +13,8 @@ import {
 } from './gostRender'
 
 export interface Page {
+  /** Страница без соответствия в Markdown. */
+  generated?: 'title' | 'toc'
   html: string
 }
 
@@ -132,66 +136,15 @@ function cutHtmlLine(
 ): { head: string; tail: string; headH: number } | null {
   const m = document.createElement('div')
   m.style.cssText = HOST_CSS
-  m.innerHTML = open + html + '</div>'
   document.body.appendChild(m)
-  const box = m.firstElementChild as HTMLElement
-  const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
-  const nodes: Text[] = []
-  let node: Node | null
-  while ((node = walker.nextNode())) nodes.push(node as Text)
-  const originals = nodes.map((n) => n.nodeValue || '')
-  // Слова с хвостовыми пробелами — конкатенация кусков воспроизводит исходник.
-  const words = originals.map((s) => s.match(/\S*\s*/g)?.filter(Boolean) ?? [])
-  const total = words.reduce((a, w) => a + w.length, 0)
-
-  const showFirst = (k: number) => {
-    let left = k
-    nodes.forEach((n, i) => {
-      const w = words[i]
-      if (left >= w.length) {
-        n.nodeValue = originals[i]
-        left -= w.length
-      } else {
-        n.nodeValue = w.slice(0, left).join('')
-        left = 0
-      }
+  try {
+    return splitHtmlAtHeight(html, budget, (piece) => {
+      m.innerHTML = open + piece + '</div>'
+      return (m.firstElementChild as HTMLElement).getBoundingClientRect().height
     })
-  }
-
-  let lo = 1
-  let hi = total
-  let best = 0
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1
-    showFirst(mid)
-    if (box.getBoundingClientRect().height <= budget) {
-      best = mid
-      lo = mid + 1
-    } else {
-      hi = mid - 1
-    }
-  }
-  if (best === 0 || best >= total) {
+  } finally {
     document.body.removeChild(m)
-    return null
   }
-  showFirst(best)
-  const head = box.innerHTML
-  const headH = box.getBoundingClientRect().height
-  let left = best
-  nodes.forEach((n, i) => {
-    const w = words[i]
-    if (left >= w.length) {
-      n.nodeValue = ''
-      left -= w.length
-    } else {
-      n.nodeValue = w.slice(left).join('')
-      left = 0
-    }
-  })
-  const tail = box.innerHTML
-  document.body.removeChild(m)
-  return { head, tail, headH }
 }
 
 /**
@@ -231,6 +184,10 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number, anchors: Anchor[]
   if (out.length === 0) return []
   const el = getHost()
   el.innerHTML = out.map((b) => '<div>' + b.html + '</div>').join('')
+  wrapDisplayMath(el)
+  out.forEach((block, i) => {
+    if (block.html.includes('data-display-math')) block.html = el.children[i].innerHTML
+  })
   const kids = el.children
   const pagesB: string[][] = [[]]
   let y = 0
@@ -335,14 +292,16 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number, anchors: Anchor[]
       let frag: { html: string; h: number }[] = []
       let fragH = chrome
       let firstFrag = true
-      const flush = () => {
+      const flush = (continued = false) => {
         if (frag.length === 0) {
           fragH = chrome
           return
         }
         pushFrag(
-          (firstFrag ? sp.openFirst : sp.openCont) +
-            frag.map((p) => p.html).join(sp.sep) +
+          (continued && sp.sep !== '\n'
+            ? (firstFrag ? sp.openFirst : sp.openCont).replace('style="', 'style="text-align-last:justify;')
+            : (firstFrag ? sp.openFirst : sp.openCont)) +
+            frag.map((p) => p.html || '&nbsp;').join(sp.sep) +
             sp.close,
         )
         y += fragH
@@ -373,16 +332,16 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number, anchors: Anchor[]
               const minPart = 2 * lineUnit - 2 // допуск на субпиксели
               if (avail >= minPart) {
                 let cut = cutHtmlLine(measureOpen, html, avail)
-                if (cut && h - cut.headH < minPart) {
+                if (cut && measurePiece(sp.measureOpen, cut.tail) < minPart) {
                   // Хвосту не хватает двух строк — Word в этом случае не
                   // переносит абзац целиком, а отдаёт строку из головы
                   // (widow-контроль): пере-режем под голову ≤ h − 2 строки.
                   cut = cutHtmlLine(measureOpen, html, Math.min(avail, h - minPart))
                 }
-                if (cut && cut.headH >= minPart && h - cut.headH >= minPart) {
+                if (cut && cut.headH >= minPart && measurePiece(sp.measureOpen, cut.tail) >= minPart) {
                   frag.push({ html: cut.head, h: cut.headH })
                   fragH += cut.headH
-                  flush()
+                  flush(true)
                   newPage()
                   html = cut.tail
                   measureOpen = sp.measureOpen // продолжение — без красной строки
@@ -397,12 +356,12 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number, anchors: Anchor[]
             if (r === n - 1 && frag.length >= 2) {
               const moved = frag.pop()!
               fragH -= moved.h
-              flush()
+              flush(true)
               newPage()
               frag = [moved]
               fragH = chrome + moved.h
             } else {
-              flush()
+              flush(true)
               newPage()
             }
             continue
@@ -413,7 +372,7 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number, anchors: Anchor[]
           if (cut) {
             frag.push({ html: cut.head, h: cut.headH })
             fragH += cut.headH
-            flush()
+            flush(true)
             newPage()
             html = cut.tail
             measureOpen = sp.measureOpen // продолжение — без красной строки
@@ -428,7 +387,7 @@ function layoutBlocks(out: RenderedBlock[], recOffset: number, anchors: Anchor[]
             fragH += h
             break
           }
-          flush()
+          flush(true)
           newPage()
         }
       }
@@ -553,9 +512,9 @@ export function paginate(
   const offset = titlePages + refPages.length + tocPacking.length
   const pagesB = layoutBlocks(outMain, offset, anchors)
 
-  const all: { html: string; show: boolean }[] = []
+  const all: { html: string; show: boolean; generated?: Page['generated'] }[] = []
   if (s.titlePage) {
-    all.push({ html: buildTitle(s), show: false })
+    all.push({ html: buildTitle(s), show: false, generated: 'title' })
   }
   refPages.forEach((arr) => all.push({ html: arr.join(''), show: true }))
   // Содержание собирается после пагинации контента (номера страниц уже
@@ -568,6 +527,7 @@ export function paginate(
           .map((i) => buildTocRow(tocHeadings[i], String(tocHeadings[i].page || '')))
           .join(''),
       show: true,
+      generated: 'toc',
     }),
   )
   pagesB.forEach((arr) => all.push({ html: arr.join(''), show: true }))
@@ -575,6 +535,7 @@ export function paginate(
   // Номер страницы — тем же шрифтом и кеглем, что основной текст (14 пт),
   // одинарным интервалом на позиции нижнего колонтитула Word (10 мм от края).
   const pages = all.map((p, i) => ({
+    ...(p.generated ? { generated: p.generated } : {}),
     html:
       p.html +
       (p.show && s.pageNumbers

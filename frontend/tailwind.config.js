@@ -21,14 +21,14 @@ export default {
         danger: 'var(--danger)',
       },
       fontFamily: {
-        sans: ["'Instrument Sans'", 'system-ui', 'sans-serif'],
-        serif: ["'Newsreader'", 'Georgia', 'serif'],
-        mono: ["'JetBrains Mono'", 'ui-monospace', 'Menlo', 'monospace'],
+        sans: ['var(--font-ui)'],
+        serif: ['var(--font-display)'],
+        mono: ['var(--font-mono)'],
       },
       keyframes: {
         fadeIn: { from: { opacity: '0' }, to: { opacity: '1' } },
         popIn: {
-          from: { opacity: '0', transform: 'scale(.96) translateY(10px)' },
+          from: { opacity: '0', transform: 'scale(.96)' },
           to: { opacity: '1', transform: 'none' },
         },
         toastIn: {
@@ -38,7 +38,7 @@ export default {
       },
       animation: {
         'fade-in': 'fadeIn .18s ease',
-        'pop-in': 'popIn .22s ease',
+        'pop-in': 'popIn .25s ease',
         'toast-in': 'toastIn .22s ease',
       },
     },

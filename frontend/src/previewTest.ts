@@ -10,6 +10,9 @@
 
 import './index.css'
 import kalmanReportMd from './fixtures/kalman-report.md?raw'
+import dataScienceMd from './fixtures/data-science.md?raw'
+import dataScienceAssets from './fixtures/data-science-assets.json'
+import { importAssets } from './lib/assets'
 import { LINE_HEIGHT } from './lib/gostRender'
 import { paginate } from './lib/paginate'
 import { DEFAULT_SETTINGS } from './lib/settings'
@@ -67,8 +70,7 @@ const DOCS: Record<string, string> = {
     '$$S = \\sum_{i=1}^{n} x_i \\cdot k_i$$',
     'где S — итоговое значение; x — измерение; k — коэффициент; n — число измерений.',
     LOREM.repeat(3),
-    // Формулы подряд: без свободных строк между собой, но с переносами
-    // между текстом и группой формул.
+    // Самостоятельные формулы разделяются одной пустой строкой.
     'Система уравнений задаётся следующим образом:',
     '$$x + y = 10$$',
     '$$x - y = 2$$',
@@ -96,6 +98,10 @@ const DOCS: Record<string, string> = {
   // таблицами, mermaid-схемами и листингами — сверка раскладки с DOCX/PDF
   // (тот же файл лежит в services/converter/tests/data/kalman-report.md).
   report: kalmanReportMd,
+  science: dataScienceMd,
+
+  // Длинная сумма: перенос по знакам без потери слагаемых.
+  mathwrap: '# Проверка формул\n\n$$S=' + Array.from({ length: 40 }, (_, i) => `x_{${i + 1}}`).join('+') + '$$\n\nКонец формулы.',
 
   // Патология: таблица в 100 столбцов — что произойдёт с вёрсткой.
   monster: [
@@ -165,7 +171,15 @@ async function run() {
   const md = DOCS[name] || DOCS.mixed
   let titleOverride: Partial<typeof DEFAULT_SETTINGS> = {}
   if (params.get('title') === 'mai') titleOverride = MAI_TITLE
-  let { pages } = paginate(md, { ...DEFAULT_SETTINGS, ...titleOverride }, () => null)
+  if (name === 'science') importAssets(dataScienceAssets.assets)
+  let diagram = 0
+  let { pages } = paginate(md, {
+    ...DEFAULT_SETTINGS, ...titleOverride,
+    ...(name === 'science' ? { titlePage: false } : {}),
+    ...(params.get('titlePage') === '0' ? { titlePage: false } : {}),
+    ...(params.get('toc') === '0' ? { toc: false } : {}),
+  }, () => name === 'science' ? dataScienceAssets.diagrams[diagram++] || null : null,
+  () => { void run() })
   if (only) pages = pages.filter((_, i) => i + 1 === only)
   const root = document.getElementById('root')!
   root.innerHTML = ''
@@ -185,7 +199,7 @@ async function run() {
         // ищем div, чей текст начинается с маркера, и меряем позицию первого
         // символа (Range) — маркер должен стоять на 12.5мм.
         const listItem = Array.from(page.querySelectorAll<HTMLElement>('div')).find((d) =>
-          /^([–—]|\d+\))\u00a0/.test(d.textContent || ''),
+          /^([-–—]|[абвгдежиклмнпрстуфхцшщэюя]\)|\d+\))\u00a0/.test(d.textContent || ''),
         )
         if (para) {
           const r = para.getBoundingClientRect()
@@ -212,6 +226,7 @@ async function run() {
   let overflowTotal = 0
   pages.forEach((p, i) => {
     const page = document.createElement('div')
+    page.dataset.page = String(only || i + 1)
     page.setAttribute('style', PAGE_CSS)
     page.innerHTML = p.html
     root.appendChild(page)
@@ -229,7 +244,13 @@ async function run() {
         .join('\n')
       root.appendChild(rep)
     }
-    const over = page.scrollHeight - page.clientHeight
+    const contentBottom = page.getBoundingClientRect().bottom - (20 / 25.4) * 96
+    const flowBottom = Math.max(...Array.from(page.children)
+      .filter((el) => (el as HTMLElement).style.position !== 'absolute')
+      .map((el) => el.getBoundingClientRect().bottom))
+    // Границы таблиц и шрифтов округляются браузером до дробных пикселей;
+    // единичный пиксель на границе листа не означает реального выхода за поле.
+    const over = Math.max(0, Math.ceil(flowBottom - contentBottom - 1.5))
     const overX = page.scrollWidth - page.clientWidth
     if (over > 0 || overX > 0) overflowTotal++
     const label = document.createElement('div')
@@ -253,4 +274,5 @@ async function run() {
   root.prepend(summary)
 }
 
-run()
+document.fonts.addEventListener('loadingdone', () => { void run() })
+void run()

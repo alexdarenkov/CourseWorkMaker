@@ -106,12 +106,12 @@ describe('перечисления и список источников', () => 
   it('маркеры: тире и «N)» со сквозной нумерацией, с красной строки без висячего отступа', () => {
     const { out } = render('- пункт;\n\n1. раз;\n\n1. два.')
     const html = out.map((b) => b.html).join('\n')
-    expect(html).toContain('–&nbsp;пункт')
+    expect(html).toContain('-&nbsp;пункт')
     expect(html).toContain('1)&nbsp;раз')
     expect(html).toContain('2)&nbsp;два') // сквозная нумерация через пустые строки
     // Пункт — как абзац с красной строки: продолжение переносится к левому
     // полю (нет висячего отступа: ни padding-left, ни отрицательного indent).
-    const item = out.find((b) => b.html.includes('–&nbsp;пункт'))!
+    const item = out.find((b) => b.html.includes('-&nbsp;пункт'))!
     expect(item.html).toContain('text-indent:12.5mm')
     expect(item.html).not.toContain('padding-left')
   })
@@ -126,9 +126,9 @@ describe('перечисления и список источников', () => 
 })
 
 describe('рисунки, таблицы, листинги, формулы', () => {
-  it('подпись рисунка «Рисунок N – …» одинарным интервалом, свободные строки вокруг', () => {
+  it('подпись рисунка «Рисунок N - …» одинарным интервалом, свободные строки вокруг', () => {
     const { out, ctx } = render('Рисунок: Схема установки\n![Схема](placeholder)')
-    const fig = out.find((b) => b.html.includes('Рисунок 1 – Схема установки'))!
+    const fig = out.find((b) => b.html.includes('Рисунок 1 - Схема установки'))!
     expect(fig.html).toContain('line-height:' + LINE_HEIGHT_SINGLE)
     expect(out[out.indexOf(fig) - 1].isBlank).toBe(true)
     expect(out[out.indexOf(fig) + 1].isBlank).toBe(true)
@@ -138,7 +138,7 @@ describe('рисунки, таблицы, листинги, формулы', () 
   it('подпись таблицы слева над таблицей; таблица во всю ширину с интервалом Word', () => {
     const { out } = render('Таблица: Сравнение\n| А | Б |\n|---|---|\n| 1 | 2 |')
     const tbl = out.find((b) => b.table)!
-    expect(tbl.table!.caption).toContain('Таблица 1 – Сравнение')
+    expect(tbl.table!.caption).toContain('Таблица 1 - Сравнение')
     // Подпись — одинарным интервалом (многострочная — через один интервал),
     // вплотную к таблице (в DOCX line_spacing=1.0, space_after=0).
     expect(tbl.table!.caption).toContain('line-height:' + LINE_HEIGHT_SINGLE)
@@ -168,14 +168,14 @@ describe('рисунки, таблицы, листинги, формулы', () 
     expect(after.isBlank).toBe(true)
   })
 
-  it('формулы: номер (N) справа, подряд — без свободных строк между собой', () => {
+  it('формулы: номер (N) справа, подряд — одна свободная строка между собой', () => {
     const { out, ctx } = render('До.\n\n$$a=1$$\n\n$$b=2$$\n\nПосле.')
     const html = out.map((b) => b.html).join('\n')
     expect(html).toContain('(1)')
     expect(html).toContain('(2)')
     const f1 = out.findIndex((b) => b.html.includes('(1)'))
     const f2 = out.findIndex((b) => b.html.includes('(2)'))
-    expect(f2).toBe(f1 + 1) // между формулами нет blank-блока
+    expect(f2).toBe(f1 + 2) // между формулами один blank-блок
     expect(out[f1 - 1].isBlank).toBe(true)
     expect(out[f2 + 1].isBlank).toBe(true)
     expect(ctx.form).toBe(2)
@@ -346,4 +346,23 @@ describe('метки строк исходника в выводе (адреса
     )!
     expect(user.html).toContain('data-l="1"')
   })
+})
+
+it('MVP-13: пустые строки листинга сохраняют общую метрику Courier New 12пт', () => {
+  const code = render('```python\nfirst = 1\n\n\nsecond = 2\n```').out.find((b) => b.split)!
+  expect(code.split!.lines).toEqual(['first = 1', '', '', 'second = 2'])
+  for (const open of [code.split!.openFirst, code.split!.openCont, code.split!.measureOpen]) {
+    expect(open).toContain("font-family:'Courier New'")
+    expect(open).toContain('font-size:12pt')
+    expect(open).toContain('line-height:' + LINE_HEIGHT_CODE)
+  }
+})
+
+it('листинг и его продолжение не имеют рамки; измеритель сохраняет ширину текста', () => {
+  const code = render('```python\nx = 1\n```').out.find((b) => b.split)!
+  for (const html of [code.html, code.split!.openFirst, code.split!.openCont, code.split!.measureOpen]) {
+    expect(html).not.toContain('border')
+  }
+  expect(code.split!.openFirst).toContain('padding:3mm 4mm')
+  expect(code.split!.measureOpen).toContain('padding:0 4mm')
 })

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 # ---------- inline ----------
@@ -32,6 +32,7 @@ _PLACEHOLDER = re.compile("\x00(\\d+)\x00")
 
 
 def parse_inline(text: str) -> list[InlineRun]:
+    text = text.replace("\x00", "")
     stash: list[InlineRun] = []
 
     def put(run: InlineRun) -> str:
@@ -44,30 +45,32 @@ def parse_inline(text: str) -> list[InlineRun]:
     t = _ITALIC.sub(lambda m: put(InlineRun(text=m.group(1), italic=True)), t)
     t = _LINK.sub(lambda m: put(InlineRun(text=m.group(1), underline=True)), t)
 
-    # При вложенном форматировании (например, `код` или $формула$ внутри
-    # **жирного**) во тексте захваченного рана остаётся маркер-плейсхолдер \x00.
-    # Модель ранов плоская, поэтому раскрываем такие плейсхолдеры в обычный
-    # текст вложенного элемента — иначе \x00 попадёт в DOCX и lxml упадёт
-    # («no NULL bytes or control characters»).
-    def expand(s: str) -> str:
-        def repl(m: re.Match) -> str:
-            r = stash[int(m.group(1))]
-            return expand(r.text if r.math is None else r.math)
-        return _PLACEHOLDER.sub(repl, s)
+    # Раскрываем вложенные элементы в раны с наследованием форматирования,
+    # сохраняя типы math/code. Формула внутри **…** остаётся формулой.
+    def expand(source: str, inherited: InlineRun) -> list[InlineRun]:
+        result: list[InlineRun] = []
+        pos = 0
+        for marker in _PLACEHOLDER.finditer(source):
+            if marker.start() > pos:
+                result.append(replace(inherited, text=source[pos:marker.start()]))
+            index = int(marker.group(1))
+            if index >= len(stash):
+                pos = marker.end()
+                continue
+            item = stash[index]
+            merged = replace(item, bold=item.bold or inherited.bold,
+                             italic=item.italic or inherited.italic,
+                             underline=item.underline or inherited.underline)
+            if item.math is not None or item.code:
+                result.append(merged)
+            else:
+                result.extend(expand(item.text, merged))
+            pos = marker.end()
+        if pos < len(source):
+            result.append(replace(inherited, text=source[pos:]))
+        return result
 
-    runs: list[InlineRun] = []
-    pos = 0
-    for m in _PLACEHOLDER.finditer(t):
-        if m.start() > pos:
-            runs.append(InlineRun(text=t[pos:m.start()]))
-        r = stash[int(m.group(1))]
-        if r.text:
-            r.text = expand(r.text)
-        runs.append(r)
-        pos = m.end()
-    if pos < len(t):
-        runs.append(InlineRun(text=t[pos:]))
-    return [r for r in runs if r.text or r.math]
+    return [r for r in expand(t, InlineRun()) if r.text or r.math]
 
 
 def plain_text(runs: list[InlineRun]) -> str:
@@ -91,6 +94,7 @@ class Paragraph:
 class ListBlock:
     ordered: bool
     items: list[str]
+    markers: list[str] | None = None
 
 
 @dataclass
@@ -160,6 +164,7 @@ _TAB_CAPTION = re.compile(r"^Таблица:\s*(.*)$", re.IGNORECASE)
 _TABLE_SEP = re.compile(r"^\|[\s:\-|]+\|?$")
 _UL_ITEM = re.compile(r"^[-*]\s+")
 _OL_ITEM = re.compile(r"^\d+[.)]\s+")
+_ALPHA_ITEM = re.compile(r"^[абвгдежиклмнпрстуфхцшщэюя]\)\s+")
 _HRULE = re.compile(r"^(---+|\*\*\*+)$")
 _PARA_BREAK = re.compile(
     r"^(#{1,6}\s|```|\$\$|\||[-*]\s|\d+[.)]\s|>|!\[|---)"
@@ -272,7 +277,7 @@ def parse_markdown(md: str) -> list[Block]:
                 raw.append(lines[i].strip())
                 i += 1
             rows = [
-                [c.strip() for c in r.strip("|").split("|")]
+                [c.strip() for c in r.removeprefix("|").removesuffix("|").split("|")]
                 for r in raw
                 if not _TABLE_SEP.match(r)
             ]
@@ -296,6 +301,17 @@ def parse_markdown(md: str) -> list[Block]:
             blocks.append(ListBlock(ordered=True, items=items))
             continue
 
+        if _ALPHA_ITEM.match(t):
+            items = []
+            markers = []
+            while i < n and _ALPHA_ITEM.match(lines[i].strip()):
+                line = lines[i].strip()
+                markers.append(line[:2])
+                items.append(_ALPHA_ITEM.sub("", line, count=1))
+                i += 1
+            blocks.append(ListBlock(ordered=False, items=items, markers=markers))
+            continue
+
         if t.startswith(">"):
             buf = []
             while i < n and lines[i].strip().startswith(">"):
@@ -314,7 +330,7 @@ def parse_markdown(md: str) -> list[Block]:
         i += 1
         while i < n:
             nt = lines[i].strip()
-            if not nt or _PARA_BREAK.match(nt) or _CAPTION_BREAK.match(nt):
+            if not nt or _PARA_BREAK.match(nt) or _CAPTION_BREAK.match(nt) or _ALPHA_ITEM.match(nt):
                 break
             buf.append(nt)
             i += 1

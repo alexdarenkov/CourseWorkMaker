@@ -7,7 +7,7 @@ describe('ModalShell', () => {
   it('клик по оверлею закрывает, клик по панели — нет', () => {
     const onClose = vi.fn()
     const { container } = render(
-      <ModalShell onClose={onClose} width={520} maxHeight="76vh">
+      <ModalShell label="Настройки" onClose={onClose} width={520} maxHeight="76vh">
         <div>содержимое</div>
       </ModalShell>,
     )
@@ -30,11 +30,11 @@ describe('Toggle', () => {
     const onToggle = vi.fn()
     // Два независимых рендера вместо rerender: happy-dom ненадёжно применяет
     // обновление inline-стиля, а проверяем мы соответствие «проп → вид».
-    const { container: off } = render(<Toggle on={false} onToggle={onToggle} />)
+    const { container: off } = render(<Toggle label="Параметр" on={false} onToggle={onToggle} />)
     fireEvent.click(off.querySelector('button')!)
     expect(onToggle).toHaveBeenCalledOnce()
     expect(off.querySelector('button')!.style.background).not.toBe('var(--accent)')
-    const { container: on } = render(<Toggle on={true} onToggle={onToggle} />)
+    const { container: on } = render(<Toggle label="Параметр" on={true} onToggle={onToggle} />)
     expect(on.querySelector('button')!.style.background).toBe('var(--accent)')
   })
 })

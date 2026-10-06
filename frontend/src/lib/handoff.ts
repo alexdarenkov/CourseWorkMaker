@@ -6,8 +6,6 @@
 export type HomeAction =
   /** Главная: открыть загруженный файл (.md/.zip). */
   | { kind: 'upload'; file: File }
-  /** Страница /create: генерация запущена — поллить job и писать в редактор. */
-  | { kind: 'track'; jobId: string; topic: string }
 
 let pending: HomeAction | null = null
 

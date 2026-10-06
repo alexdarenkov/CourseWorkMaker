@@ -1,14 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
-import { avatarGradient, initialsOf } from '../lib/avatar'
-import { loadPersisted, savePersisted } from '../lib/storage'
+import { loadEditorDraft, savePersisted } from '../lib/storage'
 import { applyTheme, effectiveTheme } from '../lib/theme'
-import { DownloadIcon, MoonIcon, SparklesIcon, Spinner, SquarePenIcon, SunIcon, UserIcon } from './icons'
+import { Brand, Button } from './ui'
+import { DownloadIcon, MoonIcon, SquarePenIcon, SunIcon } from './icons'
 
 interface AppHeaderProps {
   /** Активный пункт навигации (подсвечивается фоном). */
-  active?: 'editor' | 'create'
+  active?: 'editor'
   /** Кнопка «Скачать .docx» (только в редакторе). */
   docx?: { downloading: boolean; onDownload: () => void }
   /** Тема снаружи (редактор хранит её в настройках документа); без этих
@@ -19,102 +18,66 @@ interface AppHeaderProps {
 
 /**
  * Единый хедер всех страниц (дизайн Texturn v2): логотип Newsreader,
- * навигация «Редактор» / «Создать с ИИ» (градиент), справа — «Скачать .docx»
- * (редактор), переключатель темы и аватар-градиент (→ /profile) или вход.
+ * навигация «Редактор», справа — «Скачать .docx»
+ * (редактор) и переключатель темы.
  */
 export function AppHeader({ active, docx, theme, onToggleTheme }: AppHeaderProps) {
   const navigate = useNavigate()
-  const { user } = useAuth()
-  const [ownTheme, setOwnTheme] = useState(() => effectiveTheme(loadPersisted().s.theme))
+  const [ownTheme, setOwnTheme] = useState(() => effectiveTheme(loadEditorDraft().s.theme))
 
   const shownTheme = theme ?? ownTheme
   const toggleTheme =
     onToggleTheme ??
     (() => {
       const next = ownTheme === 'dark' ? 'light' : 'dark'
-      const persisted = loadPersisted()
+      const persisted = loadEditorDraft()
       savePersisted({ md: persisted.md, s: { ...persisted.s, theme: next } })
       applyTheme(next)
       setOwnTheme(next)
     })
 
   return (
-    <header
-      className="sticky top-0 z-30 flex h-14 flex-shrink-0 items-center gap-3 border-b px-4 sm:px-7"
-      style={{
-        background: 'var(--header-bg)',
-        borderColor: 'var(--header-line)',
-        backdropFilter: 'blur(10px)',
-      }}
-    >
-      <button
-        onClick={() => navigate('/')}
-        title="Texturn — на главную"
-        className="cursor-pointer border-none bg-transparent p-0 font-serif text-[20px] font-bold text-ink"
-      >
-        Texturn
-      </button>
-      <span className="h-[22px] w-px flex-shrink-0 bg-line" />
-
-      <nav className="flex items-center gap-2">
+    <header className="app-header">
+      <Brand onClick={() => navigate('/')} />
+      <span className="header-divider" />
+      {/* На самой странице редактора кнопка перехода в редактор избыточна —
+          на узких экранах её прячем, освобождая место шапке. */}
+      <nav className={'items-center gap-2 ' + (active === 'editor' ? 'hidden sm:flex' : 'flex')}>
         <button
+          type="button"
+          aria-label="Редактор"
+          aria-current={active === 'editor' ? 'page' : undefined}
           onClick={() => navigate('/editor')}
-          className="flex cursor-pointer items-center gap-[7px] rounded-full border border-edge px-3.5 py-[7px] text-[13px] font-semibold transition-colors hover:bg-hover"
-          style={{
-            background: active === 'editor' ? 'var(--hover)' : 'transparent',
-            color: active === 'editor' ? 'var(--ink)' : 'var(--soft)',
-          }}
+          className="nav-pill"
         >
-          <SquarePenIcon />
+          <SquarePenIcon size={13} />
           <span className="hidden sm:inline">Редактор</span>
-        </button>
-        <button
-          onClick={() => navigate('/create')}
-          className="ai-gradient flex cursor-pointer items-center gap-[7px] rounded-full border-none px-3.5 py-[7px] text-[13px] font-semibold text-white transition-[filter,box-shadow] duration-200 hover:brightness-110"
-          style={{ boxShadow: '0 1px 2px rgba(123,82,214,.16), 0 3px 8px rgba(216,75,176,.14)' }}
-        >
-          <SparklesIcon size={14} />
-          <span className="hidden sm:inline">Создать с ИИ</span>
         </button>
       </nav>
       <div className="flex-1" />
 
       {docx && (
-        <button
+        <Button
           onClick={docx.onDownload}
-          title="Скачать документ DOCX"
-          className="flex cursor-pointer items-center gap-[7px] whitespace-nowrap rounded-full border-none bg-accent px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-accent-dark"
+          busy={docx.downloading}
+          title="Скачать .docx"
+          variant="primary"
+          size="sm"
         >
-          {docx.downloading ? <Spinner /> : <DownloadIcon />}
-          <span>{docx.downloading ? 'Готовим файл…' : 'Скачать .docx'}</span>
-        </button>
+          {!docx.downloading && <DownloadIcon size={15} strokeWidth={2} />}
+          <span className="tx-hide-narrow">{docx.downloading ? 'Готовим файл…' : 'Скачать .docx'}</span>
+        </Button>
       )}
 
       <button
+        type="button"
         onClick={toggleTheme}
-        title={shownTheme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
-        className="flex h-[38px] w-[38px] flex-shrink-0 cursor-pointer items-center justify-center rounded-[10px] border border-edge bg-surface text-soft transition-colors hover:text-accent"
+        title="Тёмная / светлая тема"
+        aria-label={shownTheme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+        className="header-round header-round--square"
       >
-        {shownTheme === 'dark' ? <SunIcon /> : <MoonIcon />}
+        {shownTheme === 'dark' ? <SunIcon size={16} strokeWidth={2} /> : <MoonIcon size={16} strokeWidth={2} />}
       </button>
-      {user ? (
-        <button
-          onClick={() => navigate('/profile')}
-          title="Профиль"
-          className="flex h-[38px] w-[38px] flex-shrink-0 cursor-pointer items-center justify-center rounded-full border-none text-xs font-bold text-white"
-          style={{ background: avatarGradient(user.name) }}
-        >
-          {initialsOf(user.name)}
-        </button>
-      ) : (
-        <button
-          onClick={() => navigate('/login')}
-          title="Войти"
-          className="flex h-[38px] w-[38px] flex-shrink-0 cursor-pointer items-center justify-center rounded-full border border-edge bg-surface text-soft transition-colors hover:text-accent"
-        >
-          <UserIcon />
-        </button>
-      )}
     </header>
   )
 }

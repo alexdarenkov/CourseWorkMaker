@@ -1,0 +1,346 @@
+/* Общие элементы. Геометрия страниц задаётся отдельно от оформления контролов. */
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  /* Высота — от отступов, как в макете (7px 14px, line-height normal). */
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-button);
+  font-family: var(--font-ui);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: normal;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--duration-ui),
+    color var(--duration-ui),
+    box-shadow var(--duration-ui),
+    transform var(--duration-ui) var(--ease-ui);
+}
+.ui-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.ui-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ui-button--primary {
+  color: var(--on-accent);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.ui-button--primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+.ui-button--secondary {
+  color: var(--soft);
+  background: transparent;
+  border-color: var(--edge);
+}
+.ui-button--secondary:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--hover);
+}
+.ui-button--ghost {
+  color: var(--soft);
+  background: transparent;
+}
+.ui-button--ghost:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--hover);
+}
+.ui-button--danger {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.ui-button--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 15%, var(--surface));
+}
+.ui-button--sm {
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+}
+.ui-button--lg {
+  min-height: var(--control-height-lg);
+  padding: 0 24px;
+  font-size: var(--text-body);
+}
+.ui-icon-button {
+  width: var(--icon-size, 32px);
+  height: var(--icon-size, 32px);
+  min-height: 0;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: var(--radius-control);
+}
+.ui-icon-button:hover:not(:disabled) {
+  background: var(--icon-hover, var(--hover));
+}
+.ui-brand {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+}
+.ui-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.ui-label {
+  font-size: var(--text-label);
+  font-weight: 500;
+  color: var(--soft);
+}
+.ui-input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 7px 11px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  transition:
+    border-color var(--duration-ui),
+    box-shadow var(--duration-ui);
+}
+.ui-input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+.ui-input:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+.ui-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+.ui-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.ui-input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.ui-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.5;
+}
+.ui-card {
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.ui-segments {
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border-radius: var(--radius-control);
+  background: var(--hover);
+}
+.ui-segment {
+  flex: 1;
+  min-height: var(--control-height-sm);
+  padding: 6px 12px;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 4px);
+  color: var(--soft);
+  background: transparent;
+  font-size: var(--text-label);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--duration-ui),
+    box-shadow var(--duration-ui);
+}
+.ui-segment[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--seg-active);
+  box-shadow: var(--shadow-control);
+}
+.ui-segment:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ui-toggle {
+  position: relative;
+  display: inline-flex;
+  width: var(--toggle-width);
+  height: var(--toggle-height);
+  padding: 0;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--radius-button);
+  background: var(--toggle-off);
+  cursor: pointer;
+  transition: background var(--duration-ui);
+}
+.ui-toggle::before {
+  content: '';
+  position: absolute;
+  inset: -8px -4px;
+}
+.ui-toggle span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: var(--toggle-thumb-width);
+  height: calc(var(--toggle-height) - 4px);
+  border-radius: var(--radius-button);
+  background: var(--control-thumb);
+  transition: transform var(--duration-ui) var(--ease-ui);
+}
+.ui-toggle[aria-checked='true'] span {
+  transform: translateX(
+    calc(var(--toggle-width) - var(--toggle-thumb-width) - 4px)
+  );
+}
+.ui-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ui-setting-row .ui-label {
+  font-size: 13.5px;
+  line-height: normal;
+  color: var(--ink);
+}
+.ui-setting-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.ui-setting-row .ui-hint {
+  line-height: normal;
+}
+.ui-modal-overlay {
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+  padding: 24px;
+}
+/* Окно получает фокус при открытии (ModalShell) — без кольца вокруг всей панели. */
+.ui-modal:focus {
+  outline: none;
+}
+.ui-modal {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-modal);
+}
+.ui-notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 13px 16px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-label);
+  line-height: 1.6;
+  color: var(--soft);
+  background: var(--hover);
+}
+.ui-notice--error {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.ui-notice--warning {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+.ui-notice p {
+  margin: 0;
+}
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: var(--radius-button);
+  background: var(--hover);
+  color: var(--soft);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+.ui-toast {
+  max-width: calc(100vw - 32px);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-modal);
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  font-size: var(--text-label);
+}
+.ui-eyebrow {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.ui-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-title);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+.ui-section-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.ui-range {
+  accent-color: var(--accent);
+}
+
+.ui-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.ui-field-group > .ui-field {
+  gap: 5px;
+}
+.ui-field-group .ui-label {
+  font-size: 11.5px;
+  line-height: normal;
+  color: var(--muted);
+}
+.ui-field-group .ui-input {
+  min-height: 34px;
+  padding: 6px 11px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+.ui-field-group .ui-input::placeholder {
+  color: var(--soft);
+  opacity: 0.85;
+}
+.ui-field-group .ui-input:hover:not(:disabled) {
+  border-color: var(--edge);
+}
+.ui-field-group .ui-input:focus {
+  border-color: var(--accent);
+  box-shadow: none;
+}

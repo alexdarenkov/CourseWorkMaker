@@ -1,3 +1,5 @@
+import { imageSources, rewriteImageReferences } from './imageReferences'
+
 /**
  * Чистая логика импорта документов (.md / .zip): починка кириллицы в именах
  * архива, отсев служебных файлов macOS, поиск локальных ссылок на картинки
@@ -52,32 +54,12 @@ export function isMacJunk(name: string): boolean {
 export const isResolvable = (s: string) => /^(https?:\/\/|data:|asset:|placeholder)/i.test(s)
 
 /** Локальные ссылки на картинки в markdown (не http/data/asset/placeholder), без дублей. */
-export const findLocalRefs = (text: string) =>
-  [
-    ...new Set(
-      [...text.matchAll(/!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)/g)]
-        .map((m) => m[1])
-        .filter((s) => !isResolvable(s)),
-    ),
-  ]
+export const findLocalRefs = (text: string) => imageSources(text).filter(src => !isResolvable(src))
 
-/** Переписывает локальные ссылки на asset-ключи из keyBySrc; ссылки без
- *  соответствия остаются как есть (деградируют в заглушку при рендере). */
-export function relinkLocalRefs(
-  text: string,
-  keyBySrc: Map<string, string>,
-): { out: string; linked: number } {
-  let linked = 0
-  const out = text.replace(/(!\[[^\]]*\]\(\s*)([^)\s]+)([^)]*\))/g, (full, pre, src, post) => {
-    if (isResolvable(src)) return full
-    const key = keyBySrc.get(src)
-    if (key) {
-      linked++
-      return pre + key + post
-    }
-    return full
-  })
-  return { out, linked }
+/** linked — число уникальных найденных ссылок, как в findLocalRefs. */
+export function relinkLocalRefs(text: string, keyBySrc: Map<string, string>) {
+  const local = new Map([...keyBySrc].filter(([src]) => !isResolvable(src)))
+  return rewriteImageReferences(text, local)
 }
 
 /** markdown-файл архива: корневой (минимальная глубина пути), затем кратчайший. */
@@ -91,7 +73,15 @@ export function pickMainMdEntry<T extends { name: string }>(files: T[]): T | und
 
 /** Нормализация пути для сопоставления картинок архива: без ./, без регистра,
  *  Unicode в NFC (macOS хранит имена в NFD, а текст обычно в NFC). */
-export const normPath = (p: string) => p.replace(/^\.?\//, '').toLowerCase().normalize('NFC')
+export function normPath(p: string): string {
+  const parts: string[] = []
+  for (const part of p.replace(/\\/g, '/').toLowerCase().normalize('NFC').split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') parts.pop()
+    else parts.push(part)
+  }
+  return parts.join('/')
+}
 
 /** Имя файла без каталогов, в том же нормализованном виде. */
 export const baseName = (p: string) => (p.split(/[\\/]/).pop() || '').toLowerCase().normalize('NFC')

@@ -18,8 +18,7 @@
   подразделы с отступом 0,5 см, пункты — 1 см; реферат идёт ДО содержания
   и в него не включается;
 - список использованных источников: нумерация арабскими цифрами С точкой
-  («1.» — требование вуза, см. docs/decisions/0003; ГОСТ 6.16 говорит «без
-  точки»), с абзацного отступа, как обычный текст;
+  («1.» — ГОСТ 6.16), с абзацного отступа, как обычный текст;
 - номера страниц — тем же шрифтом и кеглем, что основной текст (14 пт).
 """
 
@@ -31,10 +30,11 @@ import re
 
 from docx import Document
 from docx.enum.section import WD_SECTION_START
+from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.image.image import Image as DocxImage
-from docx.oxml import parse_xml
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from docx.shared import Cm, Mm, Pt, RGBColor
 
@@ -101,6 +101,20 @@ class _GostBuilder:
         self.ol_n = 0
         self._setup_page()
         self._setup_styles()
+        # Word переносит уравнения по бинарным знакам и повторяет знак
+        # с обеих сторон разрыва; знак минус сохраняется, не заменяется плюсом.
+        math_ns = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+        settings = self.doc.settings.element
+        math_pr = settings.find(qn("m:mathPr"))
+        if math_pr is None:
+            math_pr = parse_xml(f'<m:mathPr xmlns:m="{math_ns}"/>')
+            settings.append(math_pr)
+        for name, value in (("brkBin", "repeat"), ("brkBinSub", "--")):
+            prop = math_pr.find(qn(f"m:{name}"))
+            if prop is None:
+                prop = parse_xml(f'<m:{name} xmlns:m="{math_ns}"/>')
+                math_pr.append(prop)
+            prop.set(qn("m:val"), value)
 
     # ---------- документ ----------
 
@@ -159,20 +173,16 @@ class _GostBuilder:
         # следующего» — ОДНА на двоих (дедуп через pending_free: после таблицы
         # перед рисунком — одна пустая строка, не две).
         pending_free = False
-        # Предыдущий блок — формула: подряд идущие формулы НЕ разделяются
-        # свободными строками (переносы только между текстом и формулами).
-        after_math = False
+        # Между соседними формулами — одна общая свободная строка.
         for i, b in enumerate(blocks):
             if skip_next:
                 skip_next = False
                 continue
-            prev_math = after_math
-            after_math = False
-            # Свободная строка ПЕРЕД таблицей/рисунком/схемой/формулой (кроме
-            # формулы сразу после формулы); листинг вставляет свой спейсер сам
+            # Свободная строка ПЕРЕД таблицей/рисунком/схемой/формулой;
+            # листинг вставляет свой спейсер сам
             # (_code), поэтому в needs_lead не входит.
             needs_lead = isinstance(b, (mdp.Figure, mdp.Table, mdp.MermaidBlock)) or (
-                isinstance(b, mdp.MathBlock) and not prev_math
+                isinstance(b, mdp.MathBlock)
             )
             if pending_free or needs_lead:
                 self._blank_line()
@@ -198,8 +208,8 @@ class _GostBuilder:
             elif isinstance(b, mdp.MermaidBlock):
                 self._mermaid(b)
             elif isinstance(b, mdp.MathBlock):
-                # Свободная строка ДО формулы уже вставлена (needs_lead), но
-                # НЕ между формулами подряд. Если за формулой «где …» —
+                # Свободная строка ДО формулы уже вставлена (needs_lead),
+                # в том числе между соседними формулами. Если за формулой «где …» —
                 # пояснение идёт вплотную, свободная строка после него, и
                 # формула не отрывается от пояснения при переносе страницы.
                 nxt = blocks[i + 1] if i + 1 < len(blocks) else None
@@ -208,7 +218,6 @@ class _GostBuilder:
                 if has_gde:
                     self._paragraph(nxt.text)
                     skip_next = True
-                after_math = True
             elif isinstance(b, mdp.Figure):
                 self._figure(b)
             elif isinstance(b, mdp.Table):
@@ -223,16 +232,11 @@ class _GostBuilder:
                 self._spacer()
             # Этому блоку нужна свободная строка ПОСЛЕ него? (вставится перед
             # следующим блоком — pending_free, один пустой абзац на двоих)
-            if isinstance(b, mdp.MathBlock):
-                # После «где» — всегда (это текст); после «голой» формулы —
-                # только если дальше не формула (формулы подряд идут вплотную).
-                idx_next = i + 2 if skip_next else i + 1
-                next_is_math = idx_next < len(blocks) and isinstance(
-                    blocks[idx_next], mdp.MathBlock
-                )
-                pending_free = has_gde or not next_is_math
-            elif isinstance(b, (mdp.Figure, mdp.Table, mdp.MermaidBlock, mdp.CodeBlock)):
+            if isinstance(b, (mdp.MathBlock, mdp.Figure, mdp.Table, mdp.MermaidBlock, mdp.CodeBlock)):
                 pending_free = True
+        # Как в превью: завершающий объект тоже имеет нижнюю свободную строку.
+        if pending_free:
+            self._blank_line()
 
     # ---------- страница и стили ----------
 
@@ -274,6 +278,23 @@ class _GostBuilder:
             st.paragraph_format.space_after = Pt(0)
             st.paragraph_format.keep_with_next = True
 
+        # Шрифт задаётся всему абзацу листинга, включая пустые строки,
+        # переносы и знак конца абзаца. Иначе они наследуют Normal 14пт и
+        # Word растягивает пустую строку до 24,15пт вместо Courier 20,4пт.
+        code = self.doc.styles.add_style("Code Block", WD_STYLE_TYPE.PARAGRAPH)
+        code.base_style = normal
+        code.font.name = FONT_CODE
+        code.font.size = SIZE_SMALL
+        code.paragraph_format.line_spacing = LINE_15
+
+        # Содержание и реферат визуально являются заголовками, но не должны
+        # выбираться полем TOC по встроенному стилю Heading 1.
+        unlisted = self.doc.styles.add_style("Unlisted Heading", WD_STYLE_TYPE.PARAGRAPH)
+        unlisted.base_style = normal
+        unlisted.font.bold = True
+        unlisted.paragraph_format.keep_with_next = True
+        unlisted.paragraph_format.keep_together = True
+
         # Стили оглавления (используются Word при обновлении поля TOC):
         # подразделы сдвигаются на 0,5 см, пункты — на 1 см; записи НЕ
         # разреженные (в превью те же отступы в buildTocRow).
@@ -281,8 +302,6 @@ class _GostBuilder:
             try:
                 st = self.doc.styles[toc_name]
             except KeyError:
-                from docx.enum.style import WD_STYLE_TYPE
-
                 st = self.doc.styles.add_style(toc_name, WD_STYLE_TYPE.PARAGRAPH, builtin=True)
             st.font.name = FONT_MAIN
             st.font.size = SIZE_MAIN
@@ -321,7 +340,7 @@ class _GostBuilder:
             run.underline = r.underline
             if r.code:
                 run.font.name = FONT_CODE
-                run.font.size = Pt(13)
+                run.font.size = SIZE_SMALL
             else:
                 # Явный шрифт на каждом run: иначе заголовки берут тематический
                 # шрифт стиля (не Times New Roman).
@@ -391,8 +410,8 @@ class _GostBuilder:
             return
         try:
             img = DocxImage.from_blob(data)
-            w_mm = img.px_width / self._img_dpi(img.horz_dpi) * 25.4
-            h_mm = img.px_height / self._img_dpi(img.vert_dpi) * 25.4
+            w_mm = img.px_width / 96 * 25.4
+            h_mm = img.px_height / 96 * 25.4
             scale = min(60 / w_mm, 40 / h_mm, 1.0)
             p = self._p()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -456,7 +475,7 @@ class _GostBuilder:
     # ---------- содержание ----------
 
     def _toc(self, page_break_before: bool = False) -> None:
-        p = self._p(style="Heading 1")
+        p = self._p(style="Unlisted Heading")
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.first_line_indent = Cm(0)
         # После реферата содержание начинается с новой страницы.
@@ -497,7 +516,7 @@ class _GostBuilder:
         if b.level == 1:
             structural = mdp.is_structural(text)
             self.in_bib = bool(re.match(r"^список", text, re.IGNORECASE))
-            p = self._p(style="Heading 1")
+            p = self._p(style="Unlisted Heading" if exclude_from_toc else "Heading 1")
             if allow_break:
                 p.paragraph_format.page_break_before = True
             if exclude_from_toc:
@@ -577,10 +596,9 @@ class _GostBuilder:
         # переносится к ЛЕВОМУ полю — без висячего отступа. NBSP после
         # маркера — текст не отрывается от маркера при переносе строки.
         # Список источников: номер С ТОЧКОЙ («1.») — требование пользователя
-        # (2026-07-12; выписка ГОСТ 6.16 говорит «без точки», но вуз требует
-        # с точкой), той же вёрсткой с красной строки.
-        for item in b.items:
-            marker = "–"
+        # (ГОСТ 6.16), той же вёрсткой с красной строки.
+        for index, item in enumerate(b.items):
+            marker = b.markers[index] if b.markers else "-"
             if b.ordered:
                 self.ol_n += 1
                 marker = (
@@ -647,8 +665,8 @@ class _GostBuilder:
         tbl_pr.append(parse_xml(mar))
 
     def _code(self, b: mdp.CodeBlock) -> None:
-        # Листинг — таблица 1×1, а не параграф с рамкой: границы ячейки Word
-        # замыкает на каждой странице при переносе, параграфную рамку — нет.
+        # Таблица 1×1 сохраняет внутренние отступы листинга при переносе.
+        # Границы отключены явно, включая унаследованные от стиля таблицы.
         # Свободная строка перед листингом — собственный спейсер (поэтому
         # листинг не входит в needs_lead build()); после — пустой абзац
         # через pending_free в build().
@@ -656,24 +674,29 @@ class _GostBuilder:
         spacer.paragraph_format.line_spacing = FREE_LINE
         table = self.doc.add_table(rows=1, cols=1)
         table.style = self.doc.styles["Table Grid"]
+        borders = OxmlElement("w:tblBorders")
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            border = OxmlElement(f"w:{edge}")
+            border.set(qn("w:val"), "nil")
+            borders.append(border)
+        table._tbl.tblPr.append(borders)
         self._set_table_full_width(table)
         self._set_cell_margins(table, top_mm=3, side_mm=4)  # как padding в превью
         p = table.cell(0, 0).paragraphs[0]
+        p.style = self.doc.styles["Code Block"]
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p.paragraph_format.line_spacing = LINE_15
-        for i, line in enumerate(b.code.split("\n")):
-            if i:
-                p.add_run().add_break()
-            run = p.add_run(line)
-            run.font.name = FONT_CODE
-            run.font.size = SIZE_SMALL
+        # python-docx переводит \n в w:br внутри того же форматированного run.
+        run = p.add_run(b.code)
+        run.font.name = FONT_CODE
+        run.font.size = SIZE_SMALL
 
     # ---------- иллюстрации ----------
 
     def _figure_caption(self, caption: str | None) -> None:
         self.fig_n += 1
         if self.s.auto_number:
-            text = f"Рисунок {self.fig_n} – {caption}" if caption else f"Рисунок {self.fig_n}"
+            text = f"Рисунок {self.fig_n} - {caption}" if caption else f"Рисунок {self.fig_n}"
         else:
             text = caption or ""
         if not text:
@@ -694,14 +717,18 @@ class _GostBuilder:
     MAX_IMG_W_MM = 150
     MAX_IMG_H_MM = 180
 
-    def _add_image(self, data: bytes) -> bool:
+    def _add_image(self, data: bytes, respect_dpi: bool = False) -> bool:
         try:
             img = DocxImage.from_blob(data)
-            w_mm = img.px_width / self._img_dpi(img.horz_dpi) * 25.4
-            h_mm = img.px_height / self._img_dpi(img.vert_dpi) * 25.4
+            w_mm = img.px_width / (self._img_dpi(img.horz_dpi) if respect_dpi else 96) * 25.4
+            h_mm = img.px_height / (self._img_dpi(img.vert_dpi) if respect_dpi else 96) * 25.4
             scale = min(self.MAX_IMG_W_MM / w_mm, self.MAX_IMG_H_MM / h_mm, 1.0)
             p = self._p()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            # Превью учитывает остаток строки под inline-рисунком при этом
+            # интервале (IMAGE_BASELINE_GAP_PT в gostRender.ts). Не заменять
+            # на одиночный интервал без парного изменения HTML.
+            p.paragraph_format.line_spacing = LINE_15
             # Свободная строка перед иллюстрацией — настоящий пустой абзац,
             # его вставляет build() (needs_lead).
             # Картинка не должна отрываться от своей подписи «Рисунок N — …».
@@ -753,7 +780,7 @@ class _GostBuilder:
 
     def _mermaid(self, b: mdp.MermaidBlock) -> None:
         data = self.resolver.next_mermaid()
-        if not (data and self._add_image(data)):
+        if not (data and self._add_image(data, respect_dpi=True)):
             self._placeholder_box("Схема (mermaid) — изображение недоступно")
         self._figure_caption(b.caption or "Схема")
 
@@ -765,7 +792,7 @@ class _GostBuilder:
         self.tab_n += 1
         # Как у рисунков: номер подписи только при включённой автонумерации.
         if self.s.auto_number:
-            cap = f"Таблица {self.tab_n} – {b.caption}" if b.caption else f"Таблица {self.tab_n}"
+            cap = f"Таблица {self.tab_n} - {b.caption}" if b.caption else f"Таблица {self.tab_n}"
         else:
             cap = b.caption or ""
         if cap:
@@ -784,8 +811,8 @@ class _GostBuilder:
 
         cols = max(len(r) for r in b.rows)
         # Широкая таблица — уменьшенный кегль (ГОСТ 6.6 допускает); правило
-        # синхронизировано с превью: >6 колонок → 12 пт.
-        cell_size = SIZE_MAIN if cols <= 6 else SIZE_SMALL
+        # синхронизировано с превью: >3 колонок → 12 пт.
+        cell_size = SIZE_MAIN if cols <= 3 else SIZE_SMALL
         table = self.doc.add_table(rows=len(b.rows), cols=cols)
         # Строки таблицы не разрываются между страницами (w:cantSplit).
         for row in table.rows:

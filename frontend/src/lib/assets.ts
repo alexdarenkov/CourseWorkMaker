@@ -12,19 +12,25 @@ let assets: Record<string, string> = load()
 function load(): Record<string, string> {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || 'null')
-    if (raw && typeof raw === 'object') return raw
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return Object.fromEntries(Object.entries(raw).filter((entry): entry is [string, string] => {
+        const [key, value] = entry
+        return key.startsWith('asset:') && typeof value === 'string' && value.startsWith('data:image/')
+      }))
+    }
   } catch {
     /* повреждённое хранилище игнорируем */
   }
   return {}
 }
 
-function persist(): void {
+function commit(next: Record<string, string>): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(assets))
+    localStorage.setItem(KEY, JSON.stringify(next))
   } catch {
-    /* квота/приватный режим — картинка останется только до перезагрузки */
+    throw new Error('Не удалось сохранить изображения: хранилище браузера заполнено или недоступно. Не закрывайте вкладку с несохранёнными изменениями.')
   }
+  assets = next
 }
 
 export function getAsset(src: string): string | null {
@@ -39,21 +45,15 @@ export function listAssets(): { key: string; dataUrl: string }[] {
 /** Удаляет картинку из хранилища (ссылки в markdown станут заглушками). */
 export function removeAsset(key: string): void {
   if (!(key in assets)) return
-  delete assets[key]
-  persist()
+  const next = { ...assets }
+  delete next[key]
+  commit(next)
 }
 
-/** Импорт ассетов, сгенерированных ИИ (графики matplotlib), в хранилище. */
+/** Атомарное добавление проверенных ассетов импортируемого документа. */
 export function importAssets(incoming: Record<string, string> | undefined): void {
   if (!incoming) return
-  let changed = false
-  for (const [key, value] of Object.entries(incoming)) {
-    if (typeof value === 'string' && value) {
-      assets[key] = value
-      changed = true
-    }
-  }
-  if (changed) persist()
+  commit({ ...assets, ...incoming })
 }
 
 /**
@@ -92,25 +92,11 @@ export function referencedAssets(md: string): Record<string, string> {
   return out
 }
 
-/** Удаляет из хранилища ассеты, на которые документ больше не ссылается.
- *  keep — ключи, живущие вне markdown (например, логотип титульного листа). */
-export function pruneAssets(md: string, keep: string[] = []): void {
-  let changed = false
-  for (const key of Object.keys(assets)) {
-    if (!md.includes(key) && !keep.includes(key)) {
-      delete assets[key]
-      changed = true
-    }
-  }
-  if (changed) persist()
-}
-
 /** Кладёт готовый data-URL в хранилище (например, отрендеренный сервером
  *  титульник) и возвращает ключ ассета. */
 export function addRawAsset(dataUrl: string, prefix = 'img'): string {
   const key = `asset:${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-  assets[key] = dataUrl
-  persist()
+  commit({ ...assets, [key]: dataUrl })
   return key
 }
 
@@ -121,19 +107,22 @@ export async function addImageAsset(file: File): Promise<string> {
 }
 
 async function downscale(file: File): Promise<string> {
+  if (file.size > 10 * 1024 * 1024) throw new Error('Изображение больше 10 МБ')
   const original = await readAsDataUrl(file)
   const img = await loadImage(original)
   const scale = Math.min(1, MAX_DIMENSION / Math.max(img.naturalWidth, img.naturalHeight))
   // Маленькие PNG/JPEG не трогаем — перекодирование только ухудшит качество.
-  if (scale === 1 && file.size < 600 * 1024) return original
+  const nativeDocxFormat = file.type === 'image/png' || file.type === 'image/jpeg'
+  if (nativeDocxFormat && scale === 1 && file.size < 600 * 1024) return original
 
   const canvas = document.createElement('canvas')
   canvas.width = Math.round(img.naturalWidth * scale)
   canvas.height = Math.round(img.naturalHeight * scale)
   const cx = canvas.getContext('2d')
-  if (!cx) return original
+  if (!cx) throw new Error('Не удалось обработать изображение')
   cx.drawImage(img, 0, 0, canvas.width, canvas.height)
-  const isPng = file.type === 'image/png'
+  // SVG/WebP/GIF переводим в PNG: python-docx не поддерживает WebP/SVG.
+  const isPng = file.type !== 'image/jpeg'
   return isPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.87)
 }
 

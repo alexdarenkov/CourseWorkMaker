@@ -156,10 +156,10 @@ def test_build_docx_smoke():
     assert "ВВЕДЕНИЕ" in joined
     assert "1\u00a0Анализ предметной области" in joined
     assert "1.1 Обзор решений" in joined
-    assert "Таблица 1 – Сравнение" in joined  # среднее тире (–), не длинное
-    assert "Рисунок 1 – Схема" in joined  # mermaid без ассета -> плейсхолдер + подпись
+    assert "Таблица 1 - Сравнение" in joined  # выбранный разделитель подписи
+    assert "Рисунок 1 - Схема" in joined  # mermaid без ассета -> плейсхолдер + подпись
     assert "1. ГОСТ 7.32-2017." in joined  # источник: номер с точкой (вуз)
-    assert "– пункт один;" in joined  # маркер + NBSP, с красной строки
+    assert "- пункт один;" in joined  # маркер + NBSP, с красной строки
     assert len(doc.tables) == 3  # таблица данных + заглушка mermaid + листинг-рамка
 
     sec = doc.sections[0]
@@ -218,7 +218,7 @@ def test_list_red_line_no_hanging_indent():
     md = "- пункт;\n1. первый;\n"
     data = build_docx(md, GostSettings(title_page=False, toc=False), {})
     doc = Document(io.BytesIO(data))
-    dash_p = next(p for p in doc.paragraphs if p.text.startswith("–"))
+    dash_p = next(p for p in doc.paragraphs if p.text.startswith("-"))
     num_p = next(p for p in doc.paragraphs if p.text.startswith("1)"))
     for p in (dash_p, num_p):
         assert abs(p.paragraph_format.first_line_indent.mm - 12.5) < 0.1
@@ -226,8 +226,8 @@ def test_list_red_line_no_hanging_indent():
         assert "\t" not in p.text
 
 
-def test_adjacent_formulas_no_free_lines_between():
-    # Формулы подряд идут вплотную; свободные строки — только вокруг группы
+def test_adjacent_formulas_one_free_line_between():
+    # Формулы подряд разделены одной свободной строкой; строки есть и вокруг группы
     # (перед первой формулой и после последней, перед текстом). Свободная
     # строка — НАСТОЯЩИЙ пустой абзац (перенос строки), а не межабзацный
     # интервал: нормоконтроль проверяет именно пустые строки.
@@ -243,8 +243,8 @@ def test_adjacent_formulas_no_free_lines_between():
     i_after = texts.index("Текст после.")
     # Между текстом и первой формулой — ровно один пустой абзац.
     assert [t.strip() for t in texts[i_before + 1 : i_f1]] == [""]
-    # Между формулами подряд пустых абзацев нет.
-    assert i_f2 == i_f1 + 1
+    # Между формулами подряд один пустой абзац.
+    assert i_f2 == i_f1 + 2
     # После последней формулы перед текстом — ровно один пустой абзац.
     assert [t.strip() for t in texts[i_f2 + 1 : i_after]] == [""]
     # Формулы без межабзацных интервалов (свободные строки — абзацами).

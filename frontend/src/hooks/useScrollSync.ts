@@ -15,13 +15,16 @@
  *     замеряются в скрытом двойнике textarea (тот же приём, что у пагинатора
  *     с его скрытым хостом).
  */
-import { RefObject, useCallback, useEffect, useRef } from 'react'
+import { RefObject, useCallback, useEffect, useMemo, useRef } from 'react'
 import { EDITOR_FONT, EDITOR_PAD_TOP, EDITOR_PAD_X, editorLineHeight } from '../lib/highlight'
 import { PREVIEW_PAD_TOP_PX } from '../lib/pageGeometry'
-import type { Anchor } from '../lib/paginate'
+import type { Anchor, Page } from '../lib/paginate'
 import {
   EditorMetrics,
   blendEdges,
+  contentOffset,
+  expandContentOffset,
+  generatedRanges,
   editorOffsetForLine,
   lineAtEditorOffset,
   lineForPreviewOffset,
@@ -36,9 +39,11 @@ interface Options {
   taRef: RefObject<HTMLTextAreaElement>
   previewRef: RefObject<HTMLDivElement>
   anchors: Anchor[]
+  pages: Page[]
   zoom: number
   md: string
   settings: Settings
+  collapsed?: 'none' | 'editor' | 'preview'
 }
 
 /** Замеряет смещения строк в скрытом двойнике textarea (режим переноса). */
@@ -76,7 +81,21 @@ function measureLineOffsets(
   return offsets
 }
 
-export function useScrollSync({ taRef, previewRef, anchors, zoom, md, settings }: Options) {
+export function useScrollSync({ taRef, previewRef, anchors, pages, zoom, md, settings, collapsed = 'none' }: Options) {
+  const ranges = useMemo(() => generatedRanges(pages), [pages])
+  const rangesRef = useRef(ranges)
+  rangesRef.current = ranges
+  const previewPosition = useRef<
+    { kind: 'text'; line: number } |
+    { kind: 'title' | 'toc'; index: number; fraction: number } | null
+  >(null)
+  // Проверяем именно ожидаемое положение: запоздалое scroll-событие после
+  // программного перемещения не должно менять ведущую панель.
+  const expected = useRef<{ editor: number | null; preview: number | null }>({ editor: null, preview: null })
+  const setScroll = useCallback((who: 'editor' | 'preview', el: HTMLElement, top: number) => {
+    el.scrollTop = top
+    expected.current[who] = el.scrollTop
+  }, [])
   const anchorsRef = useRef(anchors)
   anchorsRef.current = anchors
   const zoomRef = useRef(zoom)
@@ -92,6 +111,7 @@ export function useScrollSync({ taRef, previewRef, anchors, zoom, md, settings }
   const leader = useRef<'editor' | 'preview' | null>(null)
   const leaderUntil = useRef(0)
   const frame = useRef<number | null>(null)
+  const previousCollapsed = useRef(collapsed)
 
   const refreshMetrics = useCallback(() => {
     const ta = taRef.current
@@ -111,33 +131,60 @@ export function useScrollSync({ taRef, previewRef, anchors, zoom, md, settings }
     if (!ta || !pv) return
     if (dirty.current) refreshMetrics()
     const line = lineAtEditorOffset(metrics.current, ta.scrollTop - EDITOR_PAD_TOP)
-    const off = previewOffsetForLine(anchorsRef.current, line)
+    const off = previewOffsetForLine(anchorsRef.current, line, rangesRef.current)
     if (off === null) return
-    pv.scrollTop = blendEdges(
-      PREVIEW_PAD_TOP_PX + off * zoomRef.current,
+    const scale = zoomRef.current
+    const excluded = rangesRef.current
+    if (excluded.length === 0) {
+      setScroll('preview', pv, blendEdges(
+        PREVIEW_PAD_TOP_PX + off * scale, ta.scrollTop,
+        ta.scrollHeight - ta.clientHeight, pv.scrollHeight - pv.clientHeight,
+      ))
+      return
+    }
+    // Притягиваем края в ленте исходного текста: титульник и содержание
+    // не участвуют даже в сглаживании у начала/конца документа.
+    const max = Math.max(0, pv.scrollHeight - pv.clientHeight)
+    const contentMax = contentOffset(Math.max(0, (max - PREVIEW_PAD_TOP_PX) / scale), excluded)
+    const target = blendEdges(
+      contentOffset(off, excluded) * scale,
       ta.scrollTop,
       ta.scrollHeight - ta.clientHeight,
-      pv.scrollHeight - pv.clientHeight,
+      contentMax * scale,
     )
-  }, [taRef, previewRef, refreshMetrics])
+    setScroll('preview', pv, Math.min(max,
+      PREVIEW_PAD_TOP_PX + expandContentOffset(target / scale, excluded) * scale))
+  }, [taRef, previewRef, refreshMetrics, setScroll])
 
   const syncFromPreview = useCallback(() => {
     const ta = taRef.current
     const pv = previewRef.current
     if (!ta || !pv) return
     if (dirty.current) refreshMetrics()
-    const line = lineForPreviewOffset(
-      anchorsRef.current,
-      (pv.scrollTop - PREVIEW_PAD_TOP_PX) / zoomRef.current,
-    )
+    const scale = zoomRef.current
+    const excluded = rangesRef.current
+    const offset = Math.max(0, (pv.scrollTop - PREVIEW_PAD_TOP_PX) / scale)
+    const generated = excluded.find((r) => offset >= r.start && offset < r.end)
+    if (generated) {
+      previewPosition.current = {
+        kind: generated.kind,
+        index: excluded.filter((r) => r.kind === generated.kind).indexOf(generated),
+        fraction: (offset - generated.start) / (generated.end - generated.start),
+      }
+      return
+    }
+    const line = lineForPreviewOffset(anchorsRef.current, offset, excluded)
     if (line === null) return
-    ta.scrollTop = blendEdges(
+    previewPosition.current = { kind: 'text', line }
+    setScroll('editor', ta, blendEdges(
       EDITOR_PAD_TOP + editorOffsetForLine(metrics.current, line),
-      pv.scrollTop,
-      pv.scrollHeight - pv.clientHeight,
+      excluded.length ? contentOffset(offset, excluded) * scale : pv.scrollTop,
+      excluded.length
+        ? contentOffset(Math.max(0, (pv.scrollHeight - pv.clientHeight - PREVIEW_PAD_TOP_PX) / scale), excluded) * scale
+        : pv.scrollHeight - pv.clientHeight,
       ta.scrollHeight - ta.clientHeight,
-    )
-  }, [taRef, previewRef, refreshMetrics])
+    ))
+  }, [taRef, previewRef, refreshMetrics, setScroll])
 
   // Прокрутка сыплет событиями чаще кадра — считаем раз в кадр.
   const schedule = useCallback((fn: () => void) => {
@@ -164,9 +211,13 @@ export function useScrollSync({ taRef, previewRef, anchors, zoom, md, settings }
     }
 
     const onEditor = () => {
+      if (expected.current.editor !== null && Math.abs(ta.scrollTop - expected.current.editor) < 1) return
+      expected.current.editor = null
       if (take('editor')) schedule(syncFromEditor)
     }
     const onPreview = () => {
+      if (expected.current.preview !== null && Math.abs(pv.scrollTop - expected.current.preview) < 1) return
+      expected.current.preview = null
       if (take('preview')) schedule(syncFromPreview)
     }
     ta.addEventListener('scroll', onEditor, { passive: true })
@@ -175,7 +226,7 @@ export function useScrollSync({ taRef, previewRef, anchors, zoom, md, settings }
       ta.removeEventListener('scroll', onEditor)
       pv.removeEventListener('scroll', onPreview)
     }
-  }, [taRef, previewRef, schedule, syncFromEditor, syncFromPreview])
+  }, [taRef, previewRef, collapsed, schedule, syncFromEditor, syncFromPreview])
 
   // Сетка строк зависит от текста, кегля, режима переноса и ширины панели.
   useEffect(() => {
@@ -183,6 +234,7 @@ export function useScrollSync({ taRef, previewRef, anchors, zoom, md, settings }
   }, [md, settings.fontSize, settings.wordWrap])
 
   useEffect(() => {
+    if (collapsed !== 'none') return
     const ta = taRef.current
     if (!ta || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => {
@@ -190,17 +242,50 @@ export function useScrollSync({ taRef, previewRef, anchors, zoom, md, settings }
     })
     ro.observe(ta)
     return () => ro.disconnect()
-  }, [taRef])
+  }, [taRef, collapsed])
 
-  // После пересчёта страниц (и смены масштаба) якоря другие — подтягиваем
-  // превью под текущее место в редакторе, иначе панели расходятся после правки.
+  // Пересчёт сохраняет смысловую позицию ведущей панели, в том числе
+  // страницу содержания. При первом открытии показываем начало документа.
   useEffect(() => {
-    if (anchors.length === 0) return
-    // До первой прокрутки не вмешиваемся: иначе при открытии документа превью
-    // сразу уехало бы с титульного листа на первую страницу текста (строке 0
-    // соответствует первый содержательный блок, а не титульник).
     if (leader.current === null) return
-    if (leader.current === 'preview' && Date.now() < leaderUntil.current) return
+    if (leader.current === 'preview' && previewPosition.current) {
+      const position = previewPosition.current
+      schedule(() => {
+        const pv = previewRef.current
+        if (!pv) return
+        let offset: number | null = null
+        if (position.kind === 'text') {
+          offset = previewOffsetForLine(anchorsRef.current, position.line, rangesRef.current)
+        } else {
+          const matching = rangesRef.current.filter((r) => r.kind === position.kind)
+          const range = matching[Math.min(position.index, matching.length - 1)]
+          if (range) offset = range.start + position.fraction * (range.end - range.start)
+        }
+        if (offset !== null) setScroll('preview', pv, PREVIEW_PAD_TOP_PX + offset * zoomRef.current)
+        else syncFromEditor()
+      })
+      return
+    }
     schedule(syncFromEditor)
-  }, [anchors, zoom, schedule, syncFromEditor])
+  }, [anchors, ranges, zoom, previewRef, schedule, syncFromEditor, setScroll])
+
+  // При сворачивании DOM-узел панели удаляется, поэтому обработчики выше
+  // снимаются. После разворачивания refs указывают на новый узел; сбрасываем
+  // старое лидерство и восстанавливаем связь от панели, которая оставалась
+  // открытой: если свернули редактор, источником является превью, и наоборот.
+  useEffect(() => {
+    const wasCollapsed = previousCollapsed.current
+    const reopened = wasCollapsed !== 'none' && collapsed === 'none'
+    previousCollapsed.current = collapsed
+    if (!reopened) return
+    dirty.current = true
+    expected.current = { editor: null, preview: null }
+    leader.current = null
+    leaderUntil.current = 0
+    schedule(wasCollapsed === 'editor' ? syncFromPreview : syncFromEditor)
+  }, [collapsed, schedule, syncFromEditor, syncFromPreview])
+
+  useEffect(() => () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current)
+  }, [])
 }

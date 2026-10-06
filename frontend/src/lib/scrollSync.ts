@@ -10,7 +10,7 @@
  * Здесь только арифметика — DOM трогает хук useScrollSync.
  */
 
-import type { Anchor } from './paginate'
+import type { Anchor, Page } from './paginate'
 import { PAGE_GAP_PX, PAGE_HEIGHT_PX, PAGE_PAD_TOP_PX } from './pageGeometry'
 
 /**
@@ -26,6 +26,35 @@ export interface EditorMetrics {
 /** Смещение якоря от верха ленты превью в px (без учёта зума). */
 export function anchorOffset(a: Anchor): number {
   return (a.page - 1) * (PAGE_HEIGHT_PX + PAGE_GAP_PX) + PAGE_PAD_TOP_PX + a.y
+}
+
+/** Диапазоны без исходного текста, включая зазор после страницы. */
+export interface GeneratedRange {
+  start: number
+  end: number
+  kind: NonNullable<Page['generated']>
+}
+
+export function generatedRanges(pages: Page[]): GeneratedRange[] {
+  const step = PAGE_HEIGHT_PX + PAGE_GAP_PX
+  return pages.flatMap((page, i) => page.generated
+    ? [{ start: i * step, end: (i + 1) * step, kind: page.generated }]
+    : [])
+}
+
+/** Координата ленты с вырезанными сгенерированными страницами. */
+export function contentOffset(offset: number, ranges: GeneratedRange[]): number {
+  return offset - ranges.reduce((sum, r) => sum + Math.max(0, Math.min(offset, r.end) - r.start), 0)
+}
+
+/** В точке разрыва выбираем начало следующего участка исходного текста. */
+export function expandContentOffset(offset: number, ranges: GeneratedRange[]): number {
+  let result = offset
+  for (const r of ranges) {
+    if (result < r.start) break
+    result += r.end - r.start
+  }
+  return result
 }
 
 /** Индекс последнего элемента, у которого key(el) <= v (или 0, если таких нет). */
@@ -49,7 +78,7 @@ function frac(a: number, b: number, v: number): number {
  * Смещение в ленте превью (px, без зума) для дробной строки markdown.
  * null — якорей нет (пустой документ): прокручивать не к чему.
  */
-export function previewOffsetForLine(anchors: Anchor[], line: number): number | null {
+export function previewOffsetForLine(anchors: Anchor[], line: number, ranges: GeneratedRange[] = []): number | null {
   if (anchors.length === 0) return null
   const first = anchors[0]
   // Выше первого и ниже последнего якоря интерполировать не по чему: строки
@@ -60,12 +89,13 @@ export function previewOffsetForLine(anchors: Anchor[], line: number): number | 
   const i = lastAtMost(anchors, (a) => a.line, line)
   const a = anchors[i]
   const b = anchors[i + 1] ?? a
-  const oa = anchorOffset(a)
-  return oa + frac(a.line, b.line, line) * (anchorOffset(b) - oa)
+  const oa = contentOffset(anchorOffset(a), ranges)
+  return expandContentOffset(oa + frac(a.line, b.line, line) * (contentOffset(anchorOffset(b), ranges) - oa), ranges)
 }
 
 /** Обратное отображение: смещение в ленте превью (px, без зума) → строка markdown. */
-export function lineForPreviewOffset(anchors: Anchor[], offset: number): number | null {
+export function lineForPreviewOffset(anchors: Anchor[], offset: number, ranges: GeneratedRange[] = []): number | null {
+  if (ranges.some((r) => offset >= r.start && offset < r.end)) return null
   if (anchors.length === 0) return null
   const first = anchors[0]
   if (offset <= anchorOffset(first)) return first.line
@@ -74,7 +104,7 @@ export function lineForPreviewOffset(anchors: Anchor[], offset: number): number 
   const i = lastAtMost(anchors, anchorOffset, offset)
   const a = anchors[i]
   const b = anchors[i + 1] ?? a
-  return a.line + frac(anchorOffset(a), anchorOffset(b), offset) * (b.line - a.line)
+  return a.line + frac(contentOffset(anchorOffset(a), ranges), contentOffset(anchorOffset(b), ranges), contentOffset(offset, ranges)) * (b.line - a.line)
 }
 
 /**

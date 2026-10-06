@@ -111,3 +111,19 @@ describe('нормализация путей', () => {
     expect(mimeOf('x.jpeg')).toBe('image/jpeg')
   })
 })
+
+describe('пути относительно Markdown-файла', () => {
+  it('нормализует родительские каталоги и Windows-разделители', () => {
+    expect(normPath('docs/../images/graph.png')).toBe('images/graph.png')
+    expect(normPath('docs\\.\\images\\graph.png')).toBe('docs/images/graph.png')
+  })
+})
+
+it('при импорте не изменяет примеры изображений в коде и обычном тексте', () => {
+  const example = '```md\n![пример](a.png)\n```\n\nТекст `![пример](a.png)`\n\n'
+  const md = example + '![график](a.png)\n![повтор](a.png)'
+  expect(findLocalRefs(example)).toEqual([])
+  const result = relinkLocalRefs(md, new Map([['a.png', 'asset:img-1']]))
+  expect(result.out).toBe(example + '![график](asset:img-1)\n![повтор](asset:img-1)')
+  expect(result.linked).toBe(1)
+})

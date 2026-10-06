@@ -1,4 +1,4 @@
-/** Скачивание файлов на устройство (экспорт — только .docx, AI-10). */
+/** Скачивание DOCX и переносимого ZIP на устройство. */
 
 /** Имя файла без символов, запрещённых в Windows/macOS. */
 export function safeFileName(name: string): string {
@@ -12,5 +12,5 @@ export function triggerDownload(blob: Blob, filename: string): void {
   a.href = url
   a.download = filename
   a.click()
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

@@ -1,9 +1,9 @@
-import { RefObject } from 'react'
+import { RefObject, useCallback, useEffect, useState } from 'react'
 import type { CaretRect } from '../hooks/useCaretMarker'
 import { LINE_HEIGHT } from '../lib/gostRender'
-import { PAGE_GAP_PX, PAGE_HEIGHT_PX, PAGE_WIDTH_PX } from '../lib/pageGeometry'
+import { PAGE_GAP_PX, PAGE_HEIGHT_PX, PAGE_WIDTH_PX, PREVIEW_PAD_TOP_PX } from '../lib/pageGeometry'
 import type { Page } from '../lib/paginate'
-import { FitIcon, GearIcon, MinusIcon, PlusIcon } from './icons'
+import { FitIcon, GearIcon, MinusIcon, MonitorIcon, PlusIcon } from './icons'
 import { IconButton } from './ui'
 
 interface PreviewPaneProps {
@@ -18,6 +18,10 @@ interface PreviewPaneProps {
   onZoomOut: () => void
   onZoomFit: () => void
   onOpenSettings: () => void
+  /** Последняя запись в localStorage не удалась. */
+  saveFailed?: boolean
+  /** Повторить запись (метка «Не сохранено» — кнопка). */
+  onRetrySave?: () => void
 }
 
 // Геометрия ленты — из общего модуля: по этим же числам синхронная прокрутка
@@ -33,7 +37,7 @@ const pageStyle: React.CSSProperties = {
   background: '#fff',
   position: 'relative',
   overflow: 'hidden',
-  boxShadow: '0 2px 8px rgba(61,57,41,.10), 0 14px 36px rgba(61,57,41,.08)',
+  boxShadow: 'var(--shadow-paper)',
   borderRadius: 3,
   padding: '20mm 15mm 20mm 30mm',
   fontFamily: "'Times New Roman',Times,serif",
@@ -45,38 +49,54 @@ const pageStyle: React.CSSProperties = {
 }
 
 export function PreviewPane(props: PreviewPaneProps) {
-  const { pages, zoom } = props
+  const { pages, zoom, previewRef } = props
+  // Номер страницы для строки состояния: лист, пересекающий верхнюю треть окна.
+  const [current, setCurrent] = useState(0)
+  const updateCurrent = useCallback(() => {
+    const el = previewRef.current
+    if (!el || !pages.length) return
+    const stride = (PH + GAP) * zoom
+    const at = Math.floor((el.scrollTop + el.clientHeight / 3 - PREVIEW_PAD_TOP_PX) / stride)
+    setCurrent(Math.max(0, Math.min(pages.length - 1, at)))
+  }, [previewRef, pages.length, zoom])
+  useEffect(updateCurrent, [updateCurrent])
+
   return (
     <section
       className="flex min-h-0 flex-1 flex-col"
-      style={{ minWidth: 360, background: 'var(--preview-bg)' }}
+      style={{ minWidth: 0, background: 'var(--preview-bg)' }}
     >
-      <div
-        className="flex h-[38px] flex-shrink-0 items-center gap-1.5 overflow-hidden border-b pl-3.5 pr-2.5"
-        style={{ borderColor: 'var(--line)', background: 'var(--preview-bar)', flexWrap: 'nowrap' }}
-      >
-        <div className="min-w-1 flex-1" />
-        <IconButton title="Уменьшить" onClick={props.onZoomOut} hoverBg="var(--hover-2)" size={28}>
-          <MinusIcon />
+      <div className="preview-toolbar">
+        {/* Число страниц — только в строке состояния снизу; здесь — лишь
+            предупреждение, если запись в браузер не удалась. */}
+        {props.saveFailed && (
+          <button
+            type="button"
+            className="save-chip save-chip--warn"
+            title="Не удалось записать изменения в браузер — нажмите, чтобы повторить"
+            onClick={props.onRetrySave}
+          >
+            <MonitorIcon />
+            Не сохранено · Повторить
+          </button>
+        )}
+        <div className="flex-1" />
+        {/* Масштаб — только «−» и «+», без подписи процентов. */}
+        <IconButton title="Уменьшить" onClick={props.onZoomOut} size={24} className="tb-icon">
+          <MinusIcon size={13} />
         </IconButton>
-        <span
-          className="text-center text-xs text-soft"
-          style={{ width: 44, fontVariantNumeric: 'tabular-nums' }}
-        >
-          {Math.round(zoom * 100)}%
-        </span>
-        <IconButton title="Увеличить" onClick={props.onZoomIn} hoverBg="var(--hover-2)" size={28}>
-          <PlusIcon />
+        <IconButton title="Увеличить" onClick={props.onZoomIn} size={24} className="tb-icon">
+          <PlusIcon size={13} />
         </IconButton>
-        <IconButton title="По ширине окна" onClick={props.onZoomFit} hoverBg="var(--hover-2)" size={28}>
-          <FitIcon />
+        <IconButton title="По ширине окна" onClick={props.onZoomFit} size={24} className="tb-icon">
+          <FitIcon size={13} strokeWidth={1.7} />
         </IconButton>
-        <div className="mx-1 h-4 w-px bg-line" />
-        <IconButton title="Настройки документа (ГОСТ)" onClick={props.onOpenSettings} hoverBg="var(--hover-2)" size={28}>
-          <GearIcon size={16} />
+        <span className="toolbar-sep" style={{ margin: '0 3px' }} />
+        <IconButton title="Настройки документа (ГОСТ)" onClick={props.onOpenSettings} size={24} className="tb-icon">
+          <GearIcon size={14} />
         </IconButton>
       </div>
-      <div ref={props.previewRef} className="flex-1 overflow-auto px-6 pb-[60px] pt-7">
+      <div ref={previewRef} onScroll={updateCurrent} className="flex-1 overflow-auto px-6 pb-[60px] pt-7">
         <div
           style={{
             width: PW * zoom,
@@ -121,16 +141,38 @@ export function PreviewPane(props: PreviewPaneProps) {
                 />
               ))
             ) : (
-              <div style={pageStyle}>
+              // Скелетон вместо текстовой заглушки: та же геометрия листа,
+              // приглушённые полосы вместо строк текста ("тёплый" серый —
+              // тон стола за листом, --preview-bg, не токен темы: сам лист
+              // всегда белый вне зависимости от темы приложения).
+              <div style={pageStyle} aria-label="Формируем превью…">
                 <div
-                  style={{ color: '#999', fontStyle: 'italic', textAlign: 'center', paddingTop: '40mm' }}
-                >
-                  Формируем превью…
+                  className="mx-auto animate-pulse rounded-sm"
+                  style={{ width: '42%', height: 15, background: '#e8e6dc' }}
+                />
+                <div className="mt-9 flex flex-col gap-3">
+                  {[100, 96, 91, 97, 62].map((w, i) => (
+                    <div
+                      key={i}
+                      className="animate-pulse rounded-sm"
+                      style={{
+                        width: `${w}%`,
+                        height: 9,
+                        background: '#eeece3',
+                        animationDelay: `${i * 90}ms`,
+                      }}
+                    />
+                  ))}
                 </div>
               </div>
             )}
           </div>
         </div>
+      </div>
+      <div className="preview-status">
+        <span className="ml-auto">
+          стр. <b>{pages.length ? current + 1 : 0}</b> / {pages.length}
+        </span>
       </div>
     </section>
   )

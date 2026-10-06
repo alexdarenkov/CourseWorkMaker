@@ -69,7 +69,7 @@ function glyphSpot(katex: HTMLElement, want: number): CaretSpot | null {
       }
       if (ch.nodeType !== Node.ELEMENT_NODE) continue
       const el = ch as HTMLElement
-      if (el.classList.contains('katex-mathml')) continue
+      if (el.classList.contains('katex-mathml') || el.hasAttribute('data-math-repeat')) continue
       const found = scan(el)
       if (found) return found
     }

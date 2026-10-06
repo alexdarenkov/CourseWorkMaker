@@ -1,32 +1,68 @@
 import { useNavigate } from 'react-router-dom'
+import { Button } from '../components/ui'
+import { AsciiBackdrop } from '../components/AsciiBackdrop'
 import { AppHeader } from '../components/AppHeader'
-import { SparklesIcon, SquarePenIcon } from '../components/icons'
-import { SAMPLE_MD } from '../lib/sample'
-import { loadPersisted } from '../lib/storage'
+import { SquarePenIcon } from '../components/icons'
 
-/** Заголовок черновика для кнопки «Продолжить» — первый `#`-заголовок. */
-function draftTitle(md: string): string {
-  const m = md.match(/^#\s+(.+?)\s*$/m)
-  return m ? m[1] : 'ваш черновик'
+function FeatureGallery() {
+  return (
+    <div className="home-features">
+      <div className="home-feature">
+        <div className="home-feature-art" aria-hidden="true">
+          <div className="home-bars">
+            <span style={{ height: '38%', opacity: 0.35 }} />
+            <span style={{ height: '68%', opacity: 0.55 }} />
+            <span style={{ height: '52%', opacity: 0.4 }} />
+            <span style={{ height: '88%' }} />
+          </div>
+        </div>
+        <span>Рисунки</span>
+      </div>
+      <div className="home-feature">
+        <div className="home-feature-art" aria-hidden="true">
+          <svg viewBox="0 0 72 42" fill="none" stroke="var(--accent)" strokeWidth="1.6">
+            <rect x="3" y="4" width="24" height="13" rx="2" fill="var(--accent-bg)" />
+            <rect x="45" y="25" width="24" height="13" rx="2" fill="var(--accent-bg)" />
+            <path d="M15 17v9a5 5 0 0 0 5 5h25" strokeLinecap="round" />
+          </svg>
+        </div>
+        <span>Схемы</span>
+      </div>
+      <div className="home-feature">
+        <div className="home-feature-art" aria-hidden="true">
+          <div className="home-table">
+            {[0, 1, 2, 3].map((row) => (
+              <div key={row}>
+                <span />
+                <span />
+                <span />
+              </div>
+            ))}
+          </div>
+        </div>
+        <span>Таблицы</span>
+      </div>
+      <div className="home-feature">
+        <div className="home-feature-art" aria-hidden="true">
+          <span className="formula">
+            E&nbsp;=&nbsp;mc<sup>2</sup>
+          </span>
+        </div>
+        <span>Формулы</span>
+      </div>
+    </div>
+  )
 }
-
-const FEATURES = [
-  'Рисунки/Графики/Mermaid-схемы',
-  'Таблицы',
-  'Формулы LaTeX',
-  'Содержание',
-  'Титульный лист',
-  'Список литературы',
-]
 
 /** Мини-страница A4 в макете окна редактора (правая половина hero). */
 function MockPage() {
   return (
     <div
-      className="w-full max-w-[300px] overflow-hidden rounded-sm bg-white text-black"
+      className="w-full max-w-[300px] overflow-hidden bg-white text-black"
       style={{
         aspectRatio: '210/297',
-        boxShadow: '0 2px 8px rgba(61,57,41,.14), 0 14px 36px rgba(61,57,41,.12)',
+        borderRadius: 2,
+        boxShadow: '0 2px 8px rgba(28,28,26,.14), 0 14px 36px rgba(28,28,26,.12)',
         padding: '22px 16px 22px 26px',
         fontFamily: "'Times New Roman',Times,serif",
         fontSize: 9,
@@ -38,7 +74,6 @@ function MockPage() {
         Актуальность темы обусловлена ростом объёма данных. На рисунке&nbsp;1 показана
         зависимость <span className="italic">f(x)</span>.
       </div>
-      <div>&nbsp;</div>
       <div className="flex items-center">
         <div className="w-6 flex-shrink-0" />
         <div className="flex-1 text-center italic">
@@ -60,7 +95,6 @@ function MockPage() {
       <div style={{ textAlign: 'left', textIndent: 14 }}>
         где <span className="italic">S</span> — площадь под кривой.
       </div>
-      <div>&nbsp;</div>
       <div className="text-center">
         <div className="flex justify-center">
           <svg viewBox="0 0 150 82" style={{ width: '78%', overflow: 'visible' }}>
@@ -76,7 +110,7 @@ function MockPage() {
             />
           </svg>
         </div>
-        <div style={{ lineHeight: 1.15 }}>Рисунок 1 — График функции f(x) = x²</div>
+        <div style={{ lineHeight: 1.15 }}>Рисунок 1 – График функции f(x) = x²</div>
       </div>
     </div>
   )
@@ -86,51 +120,45 @@ function MockPage() {
 function MockWindow({ onClick }: { onClick: () => void }) {
   return (
     <div
+      data-ascii-clear
       onClick={onClick}
-      className="cursor-pointer overflow-hidden rounded-[14px] border border-edge"
-      style={{
-        background: 'var(--code-bg)',
-        boxShadow: '0 1px 2px rgba(61,57,41,.05), 0 24px 64px rgba(61,57,41,.12)',
+      role="button"
+      tabIndex={0}
+      aria-label="Открыть редактор"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
       }}
+      className="home-window"
     >
-      <div
-        className="relative flex h-10 items-center gap-2 border-b border-edge px-[15px]"
-        style={{ background: 'var(--preview-bar)' }}
-      >
-        <span className="h-3 w-3 rounded-full" style={{ background: '#ff5f57' }} />
-        <span className="h-3 w-3 rounded-full" style={{ background: '#febc2e' }} />
-        <span className="h-3 w-3 rounded-full" style={{ background: '#28c840' }} />
-        <span className="pointer-events-none absolute inset-x-0 text-center text-xs text-muted">
-          Texturn
-        </span>
+      <div className="home-window-bar">
+        <i style={{ background: 'var(--window-red)' }} />
+        <i style={{ background: 'var(--window-yellow)' }} />
+        <i style={{ background: 'var(--window-green)' }} />
+        <span>Texturn</span>
       </div>
-      <div className="grid grid-cols-2">
-        <div
-          className="border-r border-edge px-[15px] py-4 font-mono text-[11px] text-ink"
-          style={{ background: 'var(--code-bg)', lineHeight: 1.9 }}
-        >
+      <div className="home-window-body">
+        <div className="home-window-code">
           <div>
             <span style={{ color: 'var(--sx-dim)' }}>#</span>{' '}
             <span style={{ color: 'var(--sx-head)' }}>Введение</span>
           </div>
-          <div>&nbsp;</div>
           <div>Актуальность обусловлена</div>
           <div>ростом объёма данных. На</div>
           <div>
             <span style={{ color: 'var(--sx-dim)' }}>**</span>
-            <span style={{ color: 'var(--sx-head)' }}>рисунке&nbsp;1</span>
+            <span style={{ color: 'var(--sx-bold)' }}>рисунке&nbsp;1</span>
             <span style={{ color: 'var(--sx-dim)' }}>**</span> показана
           </div>
           <div>
             зависимость <span style={{ color: 'var(--sx-math)' }}>$f(x)$</span>.
           </div>
-          <div>&nbsp;</div>
           <div style={{ color: 'var(--sx-math)' }}>{'$$ S = \\int_0^1 f(x)\\,dx $$'}</div>
-          <div>&nbsp;</div>
           <div>
             где <span style={{ color: 'var(--sx-math)' }}>$S$</span> — площадь.
           </div>
-          <div>&nbsp;</div>
           <div>
             <span style={{ color: 'var(--sx-caption)' }}>Рисунок:</span> График f(x)
           </div>
@@ -139,10 +167,7 @@ function MockWindow({ onClick }: { onClick: () => void }) {
             <span className="tx-caret" />
           </div>
         </div>
-        <div
-          className="flex items-start justify-center px-3.5 py-4"
-          style={{ background: 'var(--preview-bg)' }}
-        >
+        <div className="home-window-desk">
           <MockPage />
         </div>
       </div>
@@ -151,85 +176,40 @@ function MockWindow({ onClick }: { onClick: () => void }) {
 }
 
 /**
- * Главная (AI-10, дизайн v2): hero-грид — слева serif-заголовок, две CTA
- * («Создать с ИИ» и «В редактор») и строка фич; справа макет окна редактора.
+ * Главная: заголовок, миниатюры возможностей и переход в редактор; справа макет окна редактора.
  * Загрузка своего .md/.zip живёт в тулбаре редактора.
  */
 export function HomePage() {
   const navigate = useNavigate()
 
-  // Черновик читается при каждом рендере главной — после возврата из
-  // редактора состояние актуально.
-  const persisted = loadPersisted()
-  const hasDraft = Boolean(persisted.md.trim()) && persisted.md !== SAMPLE_MD
-
   return (
-    <div className="h-screen overflow-y-auto bg-paper text-ink antialiased">
-      <AppHeader />
-      <main
-        className="mx-auto max-w-[1340px] px-5 pb-20 sm:px-12"
-        style={{ paddingTop: 'clamp(28px, 4vw, 56px)' }}
-      >
-        <div
-          className="grid items-center gap-8 lg:grid-cols-[minmax(0,.82fr)_minmax(0,1.18fr)] lg:gap-12"
-        >
-          <div>
-            <h1
-              className="m-0 font-serif font-normal"
-              style={{
-                fontSize: 'clamp(42px, 5.6vw, 64px)',
-                lineHeight: 1.03,
-                letterSpacing: '-.02em',
-                textWrap: 'balance',
-              }}
-            >
-              Курсовые и дипломы <span className="italic text-accent">без боли</span> с
-              оформлением
-            </h1>
-            <p className="mb-0 mt-[22px] max-w-[440px] text-[16px] leading-[1.65] text-soft">
-              Пишете в Markdown — справа живое постраничное превью с применением ГОСТ.
-              ИИ-агент составит план и напишет работу целиком.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <button
-                onClick={() => navigate('/create')}
-                className="ai-gradient flex cursor-pointer items-center gap-[9px] rounded-full border-none px-[30px] py-3.5 text-[15px] font-medium text-white transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5"
-                style={{ boxShadow: '0 1px 3px rgba(123,82,214,.18), 0 5px 14px rgba(216,75,176,.16)' }}
-              >
-                <SparklesIcon size={17} />
-                Создать с ИИ
-              </button>
-              <button
-                onClick={() => navigate('/editor')}
-                className="flex cursor-pointer items-center gap-[9px] rounded-full border border-edge bg-surface px-7 py-3.5 text-[15px] font-medium text-ink transition-[transform,background] duration-200 hover:-translate-y-px hover:bg-hover"
-              >
-                <SquarePenIcon size={16} />В редактор
-              </button>
+    <div className="texturn-scroll">
+      <div className="texturn-page">
+        <AsciiBackdrop />
+        <AppHeader />
+        <main className="home-content">
+          <div className="home-hero">
+            <div className="home-copy" data-ascii-clear>
+              <h1 className="home-title">
+                Курсовые и дипломы <span className="italic text-accent">без боли</span> с
+                оформлением
+              </h1>
+              <p className="home-description">
+                Пишете в Markdown — справа живое постраничное превью с применением ГОСТ.
+                Проверяйте оформление и скачивайте готовую работу в DOCX.
+              </p>
+              <FeatureGallery />
+              <div className="home-actions">
+                <Button variant="secondary" onClick={() => navigate('/editor')}>
+                  <SquarePenIcon size={14} />Редактор
+                </Button>
+              </div>
             </div>
-            {hasDraft && (
-              <button
-                onClick={() => navigate('/editor')}
-                className="mt-5 flex cursor-pointer items-center gap-2 border-none bg-transparent p-0 text-[13px] font-semibold text-accent hover:text-accent-dark"
-              >
-                ▸ Продолжить работу
-                <span className="max-w-[300px] truncate font-normal text-muted">
-                  «{draftTitle(persisted.md)}»
-                </span>
-              </button>
-            )}
-            <div className="mt-10 flex max-w-[520px] flex-wrap gap-x-5 gap-y-[9px] border-t border-line pt-[22px]">
-              {FEATURES.map((f) => (
-                <div key={f} className="flex items-center gap-2 text-[13px] text-muted">
-                  <span className="h-1 w-1 flex-shrink-0 rounded-full bg-accent" />
-                  {f}
-                </div>
-              ))}
-            </div>
-          </div>
 
-          <MockWindow onClick={() => navigate('/editor')} />
-        </div>
-      </main>
+            <MockWindow onClick={() => navigate('/editor')} />
+          </div>
+        </main>
+      </div>
     </div>
   )
 }

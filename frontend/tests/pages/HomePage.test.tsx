@@ -1,10 +1,9 @@
 /**
- * Главная-launcher (AI-10, дизайн v2): две CTA («Создать с ИИ» → /create,
- * «В редактор» → /editor без confirm и без изменения черновика), кнопка
- * «Продолжить работу» при непустом черновике. Роутер — MemoryRouter,
- * useAuth замокан.
+ * Главная: кнопка «Редактор» → /editor без confirm и без изменения черновика,
+ * миниатюры возможностей, отсутствие ИИ и «Продолжить работу».
+ * Роутер — MemoryRouter.
  */
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { HomePage } from '../../src/pages/HomePage'
@@ -13,20 +12,12 @@ import { SAMPLE_MD } from '../../src/lib/sample'
 import { loadPersisted, savePersisted } from '../../src/lib/storage'
 import { DEFAULT_SETTINGS } from '../../src/lib/settings'
 
-const mockUser = vi.hoisted(() => ({ current: null as null | { id: string; name: string; email: string } }))
-
-vi.mock('../../src/auth/AuthContext', () => ({
-  useAuth: () => ({ user: mockUser.current }),
-}))
-
 function setup() {
   return render(
     <MemoryRouter initialEntries={['/']}>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/editor" element={<div>ЭКРАН РЕДАКТОРА</div>} />
-        <Route path="/create" element={<div>ЭКРАН СОЗДАНИЯ</div>} />
-        <Route path="/login" element={<div>ЭКРАН ВХОДА</div>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -34,45 +25,29 @@ function setup() {
 
 beforeEach(() => {
   localStorage.clear()
-  mockUser.current = null
   consumeHomeAction() // очистить «карман» между тестами
 })
 
-describe('CTA и черновик', () => {
-  it('свежее хранилище (SAMPLE_MD) → кнопки «Продолжить» нет', () => {
+describe('CTA и возможности', () => {
+  it('показывает переход в редактор и миниатюры возможностей из макета', () => {
     savePersisted({ md: SAMPLE_MD, s: DEFAULT_SETTINGS })
     setup()
-    // «Создать с ИИ» есть и в хедере, и в hero.
-    expect(screen.getAllByText('Создать с ИИ').length).toBeGreaterThan(0)
-    expect(screen.getByText('В редактор')).toBeInTheDocument()
+    // В MVP нет генерации текста.
+    expect(screen.queryByText('Создать с ИИ')).toBeNull()
+    expect(within(screen.getByRole('main')).getByRole('button', { name: 'Редактор' })).toBeInTheDocument()
     expect(screen.queryByText(/Продолжить работу/)).toBeNull()
-  })
-
-  it('черновик в хранилище → «Продолжить» с первым заголовком, клик ведёт в редактор', () => {
-    savePersisted({ md: '# Фильтр Калмана\n\nТекст.', s: DEFAULT_SETTINGS })
-    setup()
-    expect(screen.getByText(/«Фильтр Калмана»/)).toBeInTheDocument()
-    fireEvent.click(screen.getByText(/Продолжить работу/))
-    expect(screen.getByText('ЭКРАН РЕДАКТОРА')).toBeInTheDocument()
+    for (const label of ['Рисунки', 'Схемы', 'Таблицы', 'Формулы'])
+      expect(screen.getByText(label)).toBeInTheDocument()
   })
 })
 
-describe('«Создать с ИИ» ведёт на страницу /create', () => {
-  it('клик → страница создания (гейт входа — на самой странице)', () => {
-    setup()
-    fireEvent.click(screen.getAllByText('Создать с ИИ')[0])
-    expect(screen.getByText('ЭКРАН СОЗДАНИЯ')).toBeInTheDocument()
-    expect(consumeHomeAction()).toBeNull()
-  })
-})
-
-describe('«В редактор»', () => {
+describe('«Редактор»', () => {
   it('открывает редактор без confirm и не трогает черновик', () => {
     savePersisted({ md: '# Черновик', s: DEFAULT_SETTINGS })
     const confirmMock = vi.fn(() => true)
     vi.stubGlobal('confirm', confirmMock)
     setup()
-    fireEvent.click(screen.getByText('В редактор'))
+    fireEvent.click(within(screen.getByRole('main')).getByRole('button', { name: 'Редактор' }))
     expect(confirmMock).not.toHaveBeenCalled()
     expect(screen.getByText('ЭКРАН РЕДАКТОРА')).toBeInTheDocument()
     expect(loadPersisted().md).toBe('# Черновик')

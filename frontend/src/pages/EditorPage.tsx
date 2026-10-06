@@ -1,22 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ApiError } from '../api/client'
 import { convertApi } from '../api'
-import { useAuth } from '../auth/AuthContext'
-import { AiConsole } from '../components/AiConsole'
 import { AppHeader } from '../components/AppHeader'
 import { EditorPane } from '../components/EditorPane'
 import { PreviewPane } from '../components/PreviewPane'
 import { SettingsModal } from '../components/SettingsModal'
 import { Toast } from '../components/Toast'
-import { useAiJob } from '../hooks/useAiJob'
+import { SegButton, SegmentedControl } from '../components/ui'
 import { useCaretMarker } from '../hooks/useCaretMarker'
 import { useDocPersistence } from '../hooks/useDocPersistence'
 import { usePagination } from '../hooks/usePagination'
 import { useScrollSync } from '../hooks/useScrollSync'
 import { useToast } from '../hooks/useToast'
-import { useZoom } from '../hooks/useZoom'
-import { addImageAsset, getAsset, referencedAssets } from '../lib/assets'
+import { useZoom, ZOOM_MAX, ZOOM_MIN } from '../hooks/useZoom'
+import { addImageAsset, getAsset, importAssets, referencedAssets } from '../lib/assets'
 import {
   baseName,
   findLocalRefs,
@@ -28,23 +24,40 @@ import {
   pickMainMdEntry,
   relinkLocalRefs,
 } from '../lib/docImport'
+import { MAX_ARCHIVE_BYTES, readDocumentArchive, unpackArchive } from '../lib/docArchive'
 import { safeFileName, triggerDownload } from '../lib/docExport'
+import { replaceEditorSelection } from '../lib/editorInsert'
 import { consumeHomeAction } from '../lib/handoff'
 import { mermaidToPng } from '../lib/mermaidRenderer'
 import { parseMD } from '../lib/markdown'
 import { EDITOR_ONLY_KEYS, Settings } from '../lib/settings'
-import { loadPersisted } from '../lib/storage'
+import { loadEditorDraft } from '../lib/storage'
 import { applyTheme, effectiveTheme, onSystemThemeChange } from '../lib/theme'
 
 export function EditorPage() {
-  const navigate = useNavigate()
-  const { user } = useAuth()
-  const persisted = useRef(loadPersisted())
+  const [persisted] = useState(loadEditorDraft)
 
-  const [md, setMd] = useState(persisted.current.md)
-  const [settings, setSettings] = useState<Settings>(persisted.current.s)
-  const [split, setSplit] = useState(0.46)
+  const [md, setMd] = useState(persisted.md)
+  const [settings, setSettings] = useState<Settings>(persisted.s)
+  const [split, setSplit] = useState(0.5)
   const [collapsed, setCollapsed] = useState<'none' | 'editor' | 'preview'>('none')
+  // Ниже ~768px редактор и превью side-by-side не помещаются (минимальная
+  // ширина панелей вместе ~700px) — переключаемся на вкладки «Редактор/Превью»
+  // поверх того же collapsed-механизма вместо доступного только мышью
+  // перетаскивания сплиттера.
+  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia('(max-width: 767px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const onChange = (e: MediaQueryListEvent) => setIsNarrow(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  useEffect(() => {
+    setCollapsed((c) => {
+      if (isNarrow) return c === 'none' ? 'preview' : c
+      return c === 'none' ? c : 'none'
+    })
+  }, [isNarrow])
   // Наведение на ручку-ресайз / свёрнутую полосу: подсветка и «вырастание»
   // язычка (дизайн v2).
   const [splitHover, setSplitHover] = useState(false)
@@ -54,8 +67,6 @@ export function EditorPage() {
   const taRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const stripRef = useRef<HTMLDivElement>(null)
-  // Пользователь уже редактировал документ или запустил генерацию.
-  const userTouched = useRef(false)
 
   // Актуальные значения для отложенных колбэков.
   const stateRef = useRef({ md, settings })
@@ -81,7 +92,7 @@ export function EditorPage() {
 
   /* ---------- сохранение (только localStorage) ---------- */
 
-  const { scheduleSave, manualSave } = useDocPersistence({ stateRef, showToast })
+  const { scheduleSave, manualSave, saveStatus } = useDocPersistence({ stateRef, showToast })
 
   /* ---------- масштаб ---------- */
 
@@ -89,7 +100,7 @@ export function EditorPage() {
 
   /* ---------- синхронная прокрутка панелей ---------- */
 
-  useScrollSync({ taRef, previewRef, anchors, zoom: zoomValue, md, settings })
+  useScrollSync({ taRef, previewRef, anchors, pages, zoom: zoomValue, md, settings, collapsed })
 
   // Каретка редактора, показанная в превью на своём месте в тексте.
   const caret = useCaretMarker({ taRef, stripRef, md, zoom: zoomValue, pages })
@@ -113,7 +124,6 @@ export function EditorPage() {
 
   const onMdChange = useCallback(
     (v: string) => {
-      userTouched.current = true
       setMd(v)
       schedulePaginate()
       scheduleSave()
@@ -123,7 +133,6 @@ export function EditorPage() {
 
   const onSettingChange = useCallback(
     <K extends keyof Settings>(key: K, value: Settings[K]) => {
-      userTouched.current = true
       setSettings((prev) => ({ ...prev, [key]: value }))
       scheduleSave()
       if (!EDITOR_ONLY_KEYS.includes(key)) schedulePaginate()
@@ -143,27 +152,11 @@ export function EditorPage() {
       const before = cur.slice(0, st)
       const pad = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : ''
       const text = pad + snippet
-      // setRangeText меняет значение нативно: позиция прокрутки и фокус
-      // сохраняются (в отличие от замены value через React).
-      const scrollTop = ta.scrollTop
-      ta.focus()
-      ta.setRangeText(text, st, ta.selectionEnd, 'end')
-      ta.scrollTop = scrollTop
+      replaceEditorSelection(ta, text)
       onMdChange(ta.value)
     },
     [onMdChange],
   )
-
-  /* ---------- фоновая задача ИИ ---------- */
-
-  const { aiJob, aiActive, trackAiJob, cancelAi } = useAiJob({
-    userTouched,
-    taRef,
-    setMd,
-    onMdChange,
-    schedulePaginate,
-    showToast,
-  })
 
   const insertImage = useCallback(
     async (file: File) => {
@@ -197,10 +190,19 @@ export function EditorPage() {
     async (file: File) => {
       let entries: Record<string, Uint8Array>
       try {
-        const { unzipSync } = await import('fflate')
-        entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
-      } catch {
-        showToast('Не удалось распаковать архив')
+        if (file.size > MAX_ARCHIVE_BYTES) throw new Error('Архив больше 32 МБ')
+        entries = await unpackArchive(new Uint8Array(await file.arrayBuffer()))
+        const restored = readDocumentArchive(entries)
+        if (restored) {
+          if (stateRef.current.md.trim() && !window.confirm('Заменить текущий документ содержимым архива?')) return
+          importAssets(restored.assets)
+          setSettings(restored.settings)
+          onMdChange(restored.md)
+          showToast('Документ восстановлен из ZIP')
+          return
+        }
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : 'Не удалось распаковать архив')
         return
       }
       // Чиним кириллицу в именах (latin1→UTF-8) и отсеиваем служебные файлы
@@ -219,24 +221,27 @@ export function EditorPage() {
         return
       }
       const text = new TextDecoder().decode(entries[mdFile.orig])
+      if (text.length > 2_000_000) { showToast('Документ слишком большой'); return }
       const name = (mdFile.name.split('/').pop() || 'Курсовая работа').replace(/\.(md|markdown|txt)$/i, '')
       const localRefs = findLocalRefs(text)
 
       // Картинки архива по нормализованному пути и по имени файла (normPath/
       // baseName приводят Unicode к NFC: macOS хранит имена в NFD).
       const imgByPath = new Map<string, string>()
-      const imgByBase = new Map<string, string>()
+      const imgByBase = new Map<string, string | null>()
       for (const f of files) {
         if (/\.(png|jpe?g|gif|webp)$/i.test(f.name)) {
           imgByPath.set(normPath(f.name), f.orig)
-          imgByBase.set(baseName(f.name), f.orig)
+          const base = baseName(f.name)
+          imgByBase.set(base, imgByBase.has(base) ? null : f.orig)
         }
       }
 
       const keyBySrc = new Map<string, string>()
       const keyByEntry = new Map<string, string>()
       for (const src of localRefs) {
-        const entry = imgByPath.get(normPath(src)) ?? imgByBase.get(baseName(src))
+        const mdDirectory = mdFile.name.slice(0, mdFile.name.lastIndexOf('/') + 1)
+        const entry = imgByPath.get(normPath(mdDirectory + src)) ?? imgByPath.get(normPath(src)) ?? imgByBase.get(baseName(src))
         if (!entry) continue
         try {
           if (!keyByEntry.has(entry)) {
@@ -252,7 +257,7 @@ export function EditorPage() {
       }
       applyLoadedDoc(text, name, keyBySrc, localRefs.length)
     },
-    [applyLoadedDoc, showToast],
+    [applyLoadedDoc, onMdChange, showToast],
   )
 
   const uploadMd = useCallback(
@@ -261,11 +266,13 @@ export function EditorPage() {
         await uploadArchive(file)
         return
       }
+      if (file.size > 8 * 1024 * 1024) { showToast('Markdown-файл больше 8 МБ'); return }
       let text = ''
       try {
         text = await file.text()
-      } catch {
-        showToast('Не удалось прочитать файл')
+        if (text.length > 2_000_000) throw new Error('Документ слишком большой')
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : 'Не удалось прочитать файл')
         return
       }
       if (stateRef.current.md.trim() && !window.confirm('Заменить текущий документ содержимым файла?')) {
@@ -306,24 +313,11 @@ export function EditorPage() {
     [applyLoadedDoc, uploadArchive, showToast],
   )
 
-  const requireAuth = useCallback((): boolean => {
-    if (user) return true
-    showToast('Войдите в аккаунт, чтобы продолжить')
-    window.setTimeout(() => navigate('/login'), 600)
-    return false
-  }, [user, navigate, showToast])
-
-  // Действие с другой страницы: подхватить запущенную генерацию (/create)
-  // или открыть загруженный на главной файл.
+  // Открыть файл, переданный с другой страницы.
   useEffect(() => {
     const action = consumeHomeAction()
     if (!action) return
-    if (action.kind === 'track') {
-      onSettingChange('topic', action.topic)
-      trackAiJob(action.jobId, 'Курсовая сгенерирована — текст в редакторе', 'generate')
-    } else {
-      void uploadMd(action.file)
-    }
+    void uploadMd(action.file)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -337,7 +331,7 @@ export function EditorPage() {
 
   const download = useCallback(
     async (format: 'docx') => {
-      if (downloading || !requireAuth()) return
+      if (downloading) return
       setDownloading(format)
       try {
         const { md: m, settings: s } = stateRef.current
@@ -361,13 +355,12 @@ export function EditorPage() {
         triggerDownload(blob, `${name}.${format}`)
         showToast(`Файл «${name}.${format}» скачан`)
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) requireAuth()
-        else showToast(e instanceof Error ? e.message : 'Не удалось сформировать файл')
+        showToast(e instanceof Error ? e.message : 'Не удалось сформировать файл')
       } finally {
         setDownloading(false)
       }
     },
-    [downloading, exportName, requireAuth, showToast],
+    [downloading, exportName, showToast],
   )
 
   // Ручка-ресайз (дизайн v2): перетаскивание меняет ширину; при уводе за
@@ -407,7 +400,7 @@ export function EditorPage() {
   const expand = useCallback(() => {
     setCollapsed('none')
     setSplitHover(false)
-    setSplit(0.46)
+    setSplit(0.5)
   }, [])
 
   /** Свёрнутая полоса с язычком-стрелкой (в стиле iOS): наведение растит
@@ -420,7 +413,7 @@ export function EditorPage() {
       title={side === 'editor' ? 'Открыть редактор' : 'Открыть превью'}
       className="relative z-10 flex cursor-pointer items-center overflow-visible transition-colors"
       style={{
-        width: 14,
+        width: 9,
         flexShrink: 0,
         justifyContent: side === 'editor' ? 'flex-start' : 'flex-end',
         background: splitHover ? 'var(--split-hover)' : 'transparent',
@@ -448,7 +441,7 @@ export function EditorPage() {
   )
 
   return (
-    <div className="flex h-screen flex-col bg-paper text-ink antialiased">
+    <div className="editor-page flex h-dvh flex-col bg-paper text-ink">
       <AppHeader
         active="editor"
         docx={{ downloading: Boolean(downloading), onDownload: () => void download('docx') }}
@@ -458,14 +451,26 @@ export function EditorPage() {
         }
       />
 
+      {isNarrow && (
+        <div className="narrow-tabs flex flex-shrink-0 border-b border-line bg-surface px-3 py-2">
+          <SegmentedControl label="Панель редактора" className="flex-1">
+            <SegButton active={collapsed === 'preview'} onClick={() => setCollapsed('preview')}>
+              Редактор
+            </SegButton>
+            <SegButton active={collapsed === 'editor'} onClick={() => setCollapsed('editor')}>
+              Превью
+            </SegButton>
+          </SegmentedControl>
+        </div>
+      )}
       <div className="flex min-h-0 flex-1">
         {collapsed === 'editor' ? (
-          collapsedStrip('editor')
+          isNarrow ? null : collapsedStrip('editor')
         ) : (
           <EditorPane
             md={md}
             settings={settings}
-            width={collapsed === 'preview' ? '100%' : (split * 100).toFixed(1) + '%'}
+            width={collapsed === 'preview' ? '100%' : `calc(${(split * 100).toFixed(1)}% - 4.5px)`}
             taRef={taRef}
             onChange={onMdChange}
             onSave={manualSave}
@@ -474,17 +479,6 @@ export function EditorPage() {
             onUploadMd={uploadMd}
             onToast={showToast}
             onOpenSettings={() => setSettingsSection('ed')}
-            bottomPanel={
-              <AiConsole
-                currentMd={md}
-                job={aiActive ? aiJob : null}
-                authed={Boolean(user)}
-                onEnsureAuth={requireAuth}
-                onStarted={trackAiJob}
-                onCancel={cancelAi}
-                onToast={showToast}
-              />
-            }
           />
         )}
         {collapsed === 'none' && (
@@ -494,7 +488,13 @@ export function EditorPage() {
             onMouseLeave={() => setSplitHover(false)}
             title="Перетащите, чтобы изменить размер (до упора — свернуть панель)"
             className="z-10 flex flex-shrink-0 cursor-col-resize items-center justify-center transition-colors"
-            style={{ width: 9, background: splitHover ? 'var(--split-hover)' : 'transparent' }}
+            style={{
+              width: 9,
+              background: splitHover ? 'var(--split-hover)' : 'transparent',
+              // Левая граница — правый край панели редактора, правая — своя:
+              // иначе со стороны превью шторка не отделена линией.
+              borderRight: '1px solid var(--line)',
+            }}
           >
             <span
               className="rounded-full transition-all duration-200"
@@ -507,7 +507,7 @@ export function EditorPage() {
           </div>
         )}
         {collapsed === 'preview' ? (
-          collapsedStrip('preview')
+          isNarrow ? null : collapsedStrip('preview')
         ) : (
           <PreviewPane
             pages={pages}
@@ -517,17 +517,19 @@ export function EditorPage() {
             previewRef={previewRef}
             onZoomIn={() => {
               userZoomed.current = true
-              setZoom(Math.min(2, Math.round(zoomValue * 10 + 1) / 10))
+              setZoom(Math.min(ZOOM_MAX, Math.round(zoomValue * 10 + 1) / 10))
             }}
             onZoomOut={() => {
               userZoomed.current = true
-              setZoom(Math.max(0.3, Math.round(zoomValue * 10 - 1) / 10))
+              setZoom(Math.max(ZOOM_MIN, Math.round(zoomValue * 10 - 1) / 10))
             }}
             onZoomFit={() => {
               userZoomed.current = false
               fitZoom()
             }}
             onOpenSettings={() => setSettingsSection('doc')}
+            saveFailed={saveStatus.startsWith('Не сохранено')}
+            onRetrySave={manualSave}
           />
         )}
       </div>
