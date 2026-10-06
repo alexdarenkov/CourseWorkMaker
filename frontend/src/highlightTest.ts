@@ -1,10 +1,24 @@
 /** Dev-проверка подсветки редактора: /highlight-test.html на dev-сервере. */
 
-import { edColors, highlight } from './lib/highlight'
+import './styles/tokens.css'
+import { EDITOR_FONT, edColors, highlight } from './lib/highlight'
 
 const SAMPLE = `# Раздел с кодом
 
-Текст с **жирным** и $x^2$.
+Текст с **жирным**, *курсивом*, \`кодом\`, $x^2$ и [ссылкой](https://x).
+
+![Схема](asset:img-1)
+
+Таблица: Результаты
+| Метод | Ошибка |
+| --- | --- |
+| **A** | 0,1 |
+
+$$
+F = ma
+$$
+
+---
 
 \`\`\`python
 def kalman_step(x, p, z, r=0.1):
@@ -30,7 +44,12 @@ public static int sum(int[] xs) {
 
 \`\`\`mermaid
 flowchart LR
+  %% комментарий
   A[Данные] --> B{Фильтр}
+  B -->|оценка| C("Результат")
+  subgraph S [Контур]
+    C -.-> A
+  end
 \`\`\`
 `
 
@@ -41,7 +60,7 @@ for (const theme of ['light', 'dark'] as const) {
   box.setAttribute(
     'style',
     `margin:12px;padding:18px 22px;border-radius:10px;background:${C.bg};color:${C.text};` +
-      "font:14px 'JetBrains Mono',ui-monospace,Menlo,monospace;line-height:1.65;white-space:pre-wrap",
+      `font:14px ${EDITOR_FONT};line-height:1.65;white-space:pre-wrap`,
   )
   box.innerHTML = highlight(SAMPLE, C)
   root.appendChild(box)

@@ -1,0 +1,152 @@
+/* Настройки внешнего вида Texturn. Меняйте значения здесь для всего интерфейса.
+   Шрифты и геометрия документа ГОСТ на эти настройки не завязаны. */
+/* Палитра приложения. Синий акцент — прежний Texturn (#117dff, кнопки
+   #2f6fe0) в обеих темах. Светлая тема — нейтральные цвета посередине между
+   тёплыми Texturn и холодными терминальными (фон #f9f9f8, текст #64635c); тёмная —
+   терминальная (ANSI): фон #0b0e13, black #1f232a.
+   Цвета подсветки — ANSI без зелёного (кроме синего #117dff):
+   светлая — sky #5197db, cyan #68b896, magenta #9877c2, red #db7371, yellow #e2ac57;
+   тёмная  — sky #70bbf5, cyan #a3dfc8, magenta #c6a3f4, red #db7376, yellow #eeb261.
+   Цвета подсветки редактора — в edColors() (lib/highlight.ts), из той же палитры.
+   А4-страницы превью НЕ используют эти переменные и всегда остаются белыми
+   (как итоговый DOCX). */
+:root {
+  --accent: #117dff;
+  --accent-dark: #0e63cc;
+  --accent-bg: #e4f0ff;
+  --paper: #f9f9f8;
+  --ink: #3c3c36;
+  --muted: #84827c;
+  --soft: #64635c;
+  --line: #e7e7e4;
+  --hover: #efefec;
+  --faint: #b2b0a8;
+  --surface: #ffffff;
+  --edge: #e0e0dc;
+  --hover-2: #e6e6e1;
+  --seg-active: #ffffff;
+  --toggle-off: #d8d8d4;
+  --preview-bg: #ededea; /* «стол» под листом A4 (desk) */
+  --preview-bar: #f2f2ef; /* полоса заголовка окна-макета на главной */
+  /* Тулбары редактора и превью (+ строка «стр. N / M») — чуть темнее главной
+     шапки, чтобы отделяться от неё; кнопки — светлая серо-бежевая плашка. */
+  --toolbar-bg: #f3f3f0;
+  --tb-btn: #ebeae5;
+  --tb-btn-hover: #e4e2dc;
+  --tb-btn-active: #dad8d2;
+  --code-bg: #fffefd;
+  --header-bg: #f9f9f8;
+  --header-line: #dcdcd6;
+  --split-hover: #e2e2dd;
+  --overlay: rgba(40, 40, 36, 0.42);
+  --toast-bg: #34342f;
+  --toast-text: #f9f9f8;
+  --danger: #cf5f5d;
+  --scroll-thumb: rgba(118, 118, 112, 0.35);
+  /* Токены подсветки markdown в статических макетах (главная). Значения
+     синхронны edColors() в lib/highlight.ts. */
+  --sx-dim: #b5b3ac;
+  --sx-head: var(--accent);
+  --sx-fence: #7c7b75;
+  --sx-math: #5197db;
+  --sx-bold: #9877c2;
+  --sx-caption: #68b896;
+}
+
+.dark {
+  --accent: #117dff;
+  --accent-dark: #0e63cc;
+  --accent-bg: hsl(213 60% 20%);
+  --paper: #0b0e13;
+  --ink: #d2d0ca;
+  --muted: #8a8c90;
+  --soft: #bfbdb7;
+  --line: #1c2027;
+  --hover: #1a1e25;
+  --faint: #55585d;
+  --surface: #151920;
+  --edge: #262b33;
+  --hover-2: #232830;
+  --seg-active: #2c323b;
+  --toggle-off: #2e333b;
+  --preview-bg: #07090d;
+  --preview-bar: #11151b;
+  --toolbar-bg: #0f1218;
+  --tb-btn: color-mix(in srgb, var(--ink) 6%, transparent);
+  --tb-btn-hover: color-mix(in srgb, var(--ink) 11%, transparent);
+  --tb-btn-active: color-mix(in srgb, var(--ink) 15%, transparent);
+  --code-bg: #0f1217;
+  --header-bg: #0b0e13;
+  --header-line: #1f232a;
+  --split-hover: #232830;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --toast-bg: #c7c7c7;
+  --toast-text: #0b0e13;
+  --danger: #db7376;
+  --scroll-thumb: rgba(160, 163, 168, 0.3);
+  --sx-dim: #525354;
+  --sx-head: var(--accent);
+  --sx-fence: #8a8c90;
+  --sx-math: #70bbf5;
+  --sx-bold: #c6a3f4;
+  --sx-caption: #a3dfc8;
+}
+
+:root {
+  /* Шрифты: при добавлении web-шрифта подключите его в frontend/index.html. */
+  /* Стеки как в макете: у Newsreader и Instrument Sans нет кириллицы,
+     поэтому кириллица берётся из системных serif / system-ui. */
+  --font-ui: 'Instrument Sans', system-ui, sans-serif;
+  --font-display: 'Newsreader', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --text-caption: 12px;
+  --text-label: 13px;
+  --text-body: 14px;
+  --text-title: clamp(32px, 4vw, 46px);
+  --radius-control: 9px;
+  --radius-button: 999px;
+  --radius-card: 18px;
+  --radius-modal: 10px;
+  --control-height: 32px;
+  --control-height-sm: 28px;
+  --control-height-lg: 40px;
+  --toggle-width: 36px;
+  --toggle-height: 16px;
+  --toggle-thumb-width: 20px;
+  --control-thumb: #fff;
+  --on-accent: #fff;
+  /* Масштаб интерфейса из макета v2 (uiScale = 106%). Применяется к оболочке,
+     шапке, тулбарам и окнам; текст редактора и листы превью не масштабируются,
+     иначе разъедутся измерения пагинации, прокрутки и каретки. */
+  --ui-zoom: 1.06;
+  /* Основные кнопки макета v2 — отдельный, чуть приглушённый синий. */
+  --primary: #2f6fe0;
+  --primary-dark: #2860c8;
+  /* Курсивные акценты в заголовках окон и форм. */
+  --heading-accent: #2f6fe0;
+  --shadow-control: 0 1px 3px rgb(28 28 26 / 10%), 0 0 0 1px rgb(28 28 26 / 3%);
+  --shadow-card: 0 2px 4px rgb(28 28 26 / 2%), 0 16px 48px rgb(28 28 26 / 4%);
+  --shadow-modal: 0 24px 64px rgb(28 28 26 / 20%);
+  --shadow-paper:
+    0 2px 8px rgb(28 28 26 / 10%), 0 24px 60px rgb(28 28 26 / 12%);
+  --focus-ring: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+  --duration-ui: 160ms;
+  --ease-ui: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --danger-bg: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  --warning: #986a19;
+  --warning-bg: #fef5e4;
+  --window-red: #db7371;
+  --window-yellow: #e2ac57;
+  --window-green: #80bd55;
+}
+
+.dark {
+  --shadow-control: 0 1px 4px rgb(0 0 0 / 25%), 0 0 0 1px rgb(255 255 255 / 4%);
+  --shadow-card: 0 2px 4px rgb(0 0 0 / 8%), 0 16px 48px rgb(0 0 0 / 12%);
+  --shadow-modal: 0 24px 80px rgb(0 0 0 / 45%);
+  --warning: #eeb261;
+  --warning-bg: #2a2217;
+  --window-red: #db7376;
+  --window-yellow: #eeb261;
+  --window-green: #95d771;
+}

@@ -18,15 +18,11 @@ export interface Settings {
   topic: string
   titlePeople: string
   titleBottom: string
-  /** Свой титульник: ключ asset-картинки (первая страница загруженного
-   *  PDF/DOCX, отрендеренная сервером). Заменяет блоки выше целиком. */
-  titleCustom: string
   /** Целевой объём работы в страницах — прогресс показывается в статус-баре. */
   targetPages: number
   /** 'auto' — следовать системной теме. */
   theme: 'light' | 'dark' | 'auto'
-  /** Показывать diff ИИ-правки перед применением (выкл — применять сразу). */
-  showDiff: boolean
+  /** Кегль моноширинного шрифта редактора, px (EDITOR_FONT_PX_MIN…MAX). */
   fontSize: number
   wordWrap: boolean
   lineNumbers: boolean
@@ -50,11 +46,9 @@ export const DEFAULT_SETTINGS: Settings = {
   titlePeople:
     'Выполнил: студент группы ИВТ-21\nСмирнова Анна Дмитриевна\n\nРуководитель: доц., канд. техн. наук Петров В. Н.',
   titleBottom: 'Москва, ' + String(new Date().getFullYear()),
-  titleCustom: '',
   targetPages: 15,
   theme: 'light',
-  showDiff: true,
-  fontSize: 14,
+  fontSize: 13,
   // Перенос строк выключен по умолчанию: при переносе невидимая textarea и
   // подсвеченный pre-слой разбивают длинные строки разными движками, из-за чего
   // курсор/выделение расходятся с текстом. Без переноса строки 1:1 и совпадают.
@@ -63,9 +57,30 @@ export const DEFAULT_SETTINGS: Settings = {
   syntaxHl: true,
 }
 
+/** Допустимый кегль шрифта редактора, px (целые, шаг 1). */
+export const EDITOR_FONT_PX_MIN = 11
+export const EDITOR_FONT_PX_MAX = 16
+
+/** Миграция старых сохранений: титульник и кегль редактора. Новый формат
+ *  возвращается тем же объектом. */
+export function migrateSettings(raw: Record<string, unknown>): Record<string, unknown> {
+  const out = migrateTitle(raw)
+  if (!out || typeof out !== 'object') return out
+  const size = out.fontSize
+  const outOfRange =
+    typeof size === 'number' && Number.isFinite(size) && (size < EDITOR_FONT_PX_MIN || size > EDITOR_FONT_PX_MAX)
+  if (!('editorFontPt' in out) && !outOfRange) return out
+  // Кегль в pt (`editorFontPt`) недолго жил в настройках — отбрасываем, берётся
+  // значение по умолчанию. Прежняя шкала px была 12…18 — приводим к 11…16,
+  // а не сбрасываем из-за неё все настройки документа.
+  const { editorFontPt: _dropped, ...rest } = out
+  if (outOfRange) rest.fontSize = Math.min(EDITOR_FONT_PX_MAX, Math.max(EDITOR_FONT_PX_MIN, Math.round(size)))
+  return rest
+}
+
 /** Миграция настроек старого формата титульника (фиксированные поля вуза/
  *  студента) в свободные блоки. Старые сохранения — localStorage и облако. */
-export function migrateSettings(raw: Record<string, unknown>): Record<string, unknown> {
+function migrateTitle(raw: Record<string, unknown>): Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || 'titleHeader' in raw) return raw
   const s = raw as Record<string, string>
   if (!('university' in s || 'student' in s || 'discipline' in s)) return raw
@@ -98,16 +113,9 @@ export function migrateSettings(raw: Record<string, unknown>): Record<string, un
 /** Поля настроек, не требующие перепагинации превью. */
 export const EDITOR_ONLY_KEYS: (keyof Settings)[] = [
   'theme',
-  'showDiff',
   'fontSize',
   'wordWrap',
   'lineNumbers',
   'syntaxHl',
   'targetPages',
 ]
-
-export interface User {
-  id: string
-  name: string
-  email: string
-}

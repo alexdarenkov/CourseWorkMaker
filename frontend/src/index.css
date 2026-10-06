@@ -1,4 +1,7 @@
 @import 'katex/dist/katex.min.css';
+@import './styles/tokens.css';
+@import './styles/components.css';
+@import './styles/texturn.css';
 
 @tailwind base;
 @tailwind components;
@@ -17,65 +20,69 @@
   margin: 0.2em 0;
 }
 
-/* Палитра приложения. А4-страницы превью НЕ используют эти переменные
-   и всегда остаются белыми (как итоговый DOCX). */
+/* Нативные контролы (checkbox, скроллбары) следуют теме ПРИЛОЖЕНИЯ,
+   а не системной. */
 :root {
-  --paper: #faf9f5;
-  --ink: #3d3929;
-  --muted: #8a8470;
-  --soft: #6b6553;
-  --line: #e8e6dc;
-  --hover: #f0eee6;
-  --faint: #b3ac98;
-  --surface: #ffffff;
-  --edge: #e2dfd2;
-  --hover-2: #e8e5d8;
-  --warm: #b05730;
-  --warm-border: #e8d5cd;
-  --warm-bg: #faf0ec;
-  --avatar: #f3e3db;
-  --seg-active: #ffffff;
-  --toggle-off: #dcd9cd;
-  --preview-bg: #efede4;
-  --preview-bar: #f5f3ec;
-  --chip-bg: #e3dfd6;
-  --chip-text: #7a7563;
-  --header-bg: rgba(250, 249, 245, 0.92);
-  --overlay: rgba(61, 57, 41, 0.35);
-  --toast-bg: #3d3929;
-  --toast-text: #faf9f5;
-  --danger: #b3553e;
-  --scroll-thumb: rgba(135, 130, 111, 0.35);
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
 }
 
-.dark {
-  --paper: #1b1a17;
-  --ink: #e6e3d8;
-  --muted: #948f7e;
-  --soft: #aaa494;
-  --line: #33312a;
-  --hover: #2a2823;
-  --faint: #6e6859;
-  --surface: #242320;
-  --edge: #3a372f;
-  --hover-2: #363329;
-  --warm: #e08a68;
-  --warm-border: #4a3a33;
-  --warm-bg: #33291f;
-  --avatar: #3c2f28;
-  --seg-active: #403d33;
-  --toggle-off: #45423a;
-  --preview-bg: #141311;
-  --preview-bar: #201f1c;
-  --chip-bg: #33312a;
-  --chip-text: #a39d8b;
-  --header-bg: rgba(27, 26, 23, 0.92);
-  --overlay: rgba(0, 0, 0, 0.5);
-  --toast-bg: #e6e3d8;
-  --toast-text: #1b1a17;
-  --danger: #e07a5f;
-  --scroll-thumb: rgba(170, 164, 148, 0.35);
+/* Слайдеры рисуем сами (стиль tx-range из дизайна Texturn v2): трек с
+   заливкой до значения (процент — CSS-переменная --fill на элементе),
+   бегунок — белая пилюля. Нативный трек красится по системной теме и
+   остаётся тёмным в светлой теме приложения, поэтому свой. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+  vertical-align: middle;
 }
+input[type='range']::-webkit-slider-runnable-track {
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--fill, 40%),
+    var(--toggle-off) var(--fill, 40%),
+    var(--toggle-off) 100%
+  );
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 16px;
+  margin-top: -4px;
+  border: none;
+  border-radius: 999px;
+  background: var(--control-thumb);
+  box-shadow: var(--shadow-control);
+}
+input[type='range']::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--toggle-off);
+}
+input[type='range']::-moz-range-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+input[type='range']::-moz-range-thumb {
+  width: 24px;
+  height: 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--control-thumb);
+  box-shadow: var(--shadow-control);
+}
+
 
 html,
 body,
@@ -85,6 +92,10 @@ body,
   height: 100%;
   overflow: hidden;
   background: var(--paper);
+  /* Шрифт интерфейса (дизайн v2); заголовки/логотип — Newsreader (font-serif),
+     редактор — JetBrains Mono, лист A4 — Times New Roman (не отсюда). */
+  font-family: var(--font-ui);
+  color: var(--ink);
 }
 
 * {
@@ -105,28 +116,16 @@ body,
   background: transparent;
 }
 
-textarea:focus,
-input:focus {
-  outline: none;
-}
-
-/* Клавиатурная навигация: видимое кольцо фокуса только от Tab (не от клика). */
-button:focus-visible,
-select:focus-visible {
-  outline: 2px solid #d97757;
-  outline-offset: 1px;
-}
-
-/* Лёгкий отклик нажатия на всех кнопках. */
-button {
-  transition: transform 0.08s ease;
-}
-button:active {
-  transform: scale(0.96);
+/* Поля редактора сохраняют собственный фокус; общие формы используют ui-input. */
+textarea:focus { outline: none; }
+button, input, textarea, select { font: inherit; }
+button:focus-visible, a:focus-visible, input[type='range']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 ::selection {
-  background: rgba(217, 119, 87, 0.28);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 @keyframes spin {
@@ -136,4 +135,47 @@ button:active {
 }
 .animate-spin-fast {
   animation: spin 0.7s linear infinite;
+}
+
+/* Мигающий «курсор» в макете редактора на главной. */
+@keyframes tx-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.tx-caret {
+  display: inline-block;
+  width: 2px;
+  height: 13px;
+  background: var(--accent);
+  vertical-align: -2px;
+  margin-left: 1px;
+  animation: tx-caret 1.1s step-end infinite;
+}
+
+/* Каретка редактора, показанная в превью на своём месте в тексте. */
+.pv-caret {
+  width: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  animation: tx-caret 1.1s step-end infinite;
+}
+
+/* Клавиатурный фокус виден без постоянных рамок вокруг каждого действия. */
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

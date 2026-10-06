@@ -10,7 +10,7 @@ function ensureInit() {
       startOnLoad: false,
       theme: 'neutral',
       fontFamily: 'Times New Roman',
-      securityLevel: 'loose',
+      securityLevel: 'strict',
       // Подписи обычным SVG-текстом, без foreignObject: HTML-подписи не
       // растеризуются в canvas (PNG для DOCX вышел бы без текста).
       flowchart: { htmlLabels: false },

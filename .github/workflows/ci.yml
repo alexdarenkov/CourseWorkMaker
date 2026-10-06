@@ -1,0 +1,44 @@
+name: MVP checks
+on:
+  pull_request:
+    branches: [develop, main, mvp-core]
+  push:
+    branches: [develop, main, mvp-core]
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm audit --audit-level=moderate
+        working-directory: frontend
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t cwm-backend services/backend
+      - run: docker run --rm cwm-backend pandoc --version
+      - run: docker run --rm -v "$PWD/services/backend/tests:/srv/tests:ro" cwm-backend python -m pytest tests -q -p no:cacheprovider
+      - run: docker run --rm cwm-backend sh -c 'pip install --quiet --no-warn-script-location pip-audit && python -m pip_audit --progress-spinner off'
+  production:
+    runs-on: ubuntu-latest
+    env:
+      DOMAIN: smoke.invalid
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -p release-check -f docker-compose.production.yml -f deploy/compose.smoke.yml up -d --build --wait
+      - run: python3 scripts/release_smoke.py http://localhost:3080
+      - if: failure()
+        run: docker compose -p release-check -f docker-compose.production.yml -f deploy/compose.smoke.yml logs --tail=100

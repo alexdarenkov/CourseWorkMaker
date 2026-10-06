@@ -1,6 +1,29 @@
 import { esc } from './markdown'
 import type { Settings } from './settings'
 
+// --- Метрики текстового слоя редактора ---
+// Ими одинаково пользуются оба слоя (textarea и подсвеченный pre, инвариант
+// «переносят строки одинаково») и синхронная прокрутка, которая по этой сетке
+// переводит scrollTop в номер строки. Расходиться им нельзя.
+
+/** Моноширинный шрифт редактора. */
+export const EDITOR_FONT = 'var(--font-mono)'
+
+/** Внутренние отступы текстового слоя, px. */
+export const EDITOR_PAD_TOP = 18
+export const EDITOR_PAD_X = 22
+export const EDITOR_PAD_BOTTOM = 140
+
+/**
+ * Высота строки редактора — ЦЕЛОЕ число px (а не дробный множитель 1.65):
+ * дробный line-height браузеры округляют по-разному в textarea, pre и
+ * нумерации, из-за чего слои накапливают вертикальное расхождение — номера
+ * «съезжают» от строк, а каретка встаёт выше своей строки.
+ */
+export function editorLineHeight(fontSize: number): number {
+  return Math.round(fontSize * 1.65)
+}
+
 export interface EditorColors {
   bg: string
   text: string
@@ -14,50 +37,96 @@ export interface EditorColors {
   quote: string
   caption: string
   gutBorder: string
-  // Токены кода внутри ```-блоков (ключевые слова, строки, числа, комментарии).
+  // Фон рамки вокруг ```-блоков (код и mermaid).
+  codeBg: string
+  // Токены кода внутри ```-блоков (ключевые слова, строки, числа, комментарии,
+  // вызовы функций).
   codeKw: string
   codeStr: string
   codeNum: string
   codeCom: string
+  codeFn: string
+  // Inline-оформление: у каждого вида выделения свой цвет.
+  bold: string
+  italic: string
+  code: string
+  image: string
+  table: string
+  // Токены внутри ```mermaid: ключевые слова, стрелки, подписи узлов и рёбер.
+  mmKw: string
+  mmArrow: string
+  mmLabel: string
+}
+
+/* Цвета терминальной (ANSI) палитры без зелёного; синий — прежний акцент
+ * Texturn (#117dff), нейтральные цвета светлой темы — между тёплыми
+ * и холодными (styles/tokens.css). Роли: заголовки/маркеры/картинки — синий, жирный —
+ * пурпурный, курсив и формулы — голубой, inline-код — жёлтый, ссылки и
+ * подписи — циан, строки в коде и подписи узлов Mermaid — красный. */
+const ANSI = {
+  light: {
+    blue: '#117dff',
+    sky: '#5197db',
+    cyan: '#68b896',
+    magenta: '#9877c2',
+    red: '#db7371',
+    yellow: '#e2ac57',
+  },
+  dark: {
+    blue: '#117dff',
+    sky: '#70bbf5',
+    cyan: '#a3dfc8',
+    magenta: '#c6a3f4',
+    red: '#db7376',
+    yellow: '#eeb261',
+  },
 }
 
 export function edColors(theme: Settings['theme']): EditorColors {
-  if (theme === 'dark')
-    return {
-      bg: '#201f1c',
-      text: '#e9e6dc',
-      dim: '#5f5b4e',
-      head: '#e08a68',
-      chipBg: '#2e2c26',
-      fence: '#9d977f',
-      link: '#82aacb',
-      math: '#b39ddb',
-      mark: '#e08a68',
-      quote: '#8f8a76',
-      caption: '#86a87c',
-      gutBorder: '#2e2c26',
-      codeKw: '#b39ddb',
-      codeStr: '#86a87c',
-      codeNum: '#82aacb',
-      codeCom: '#716c5c',
-    }
+  const dark = theme === 'dark'
+  const A = dark ? ANSI.dark : ANSI.light
+  const base = dark
+    ? {
+        bg: '#0f1217',
+        text: '#d2d0ca',
+        dim: '#525354',
+        chipBg: '#1f232a',
+        fence: '#8a8c90',
+        quote: '#8a8c90',
+        gutBorder: '#1f232a',
+        codeBg: '#161a20',
+        codeCom: '#5f6166',
+      }
+    : {
+        bg: '#fffefd',
+        text: '#3c3c36',
+        dim: '#b5b3ac',
+        chipBg: '#f0efeb',
+        fence: '#7c7b75',
+        quote: '#84827c',
+        gutBorder: '#ebebe8',
+        codeBg: '#f2f2ee',
+        codeCom: '#a2a099',
+      }
   return {
-    bg: '#fffefb',
-    text: '#3a3630',
-    dim: '#b8b2a0',
-    head: '#c25e3d',
-    chipBg: '#f1eee4',
-    fence: '#7a7563',
-    link: '#3e6b8f',
-    math: '#7c5cbf',
-    mark: '#c25e3d',
-    quote: '#8a8470',
-    caption: '#5d8a52',
-    gutBorder: '#f0eee6',
-    codeKw: '#7c5cbf',
-    codeStr: '#5d8a52',
-    codeNum: '#3e6b8f',
-    codeCom: '#a89f88',
+    ...base,
+    head: A.blue,
+    mark: A.blue,
+    link: A.cyan,
+    math: A.sky,
+    caption: A.cyan,
+    bold: A.magenta,
+    italic: A.sky,
+    code: A.yellow,
+    image: A.blue,
+    table: A.sky,
+    codeKw: A.magenta,
+    codeStr: A.red,
+    codeNum: A.cyan,
+    codeFn: A.blue,
+    mmKw: A.blue,
+    mmArrow: A.sky,
+    mmLabel: A.red,
   }
 }
 
@@ -96,27 +165,23 @@ function kwRe(words: string): RegExp {
   return new RegExp('\\b(?:' + words + ')\\b', 'g')
 }
 
-/** Подсветка одной строки кода: собираем совпадения всех типов токенов по
- *  сырой строке, отбрасываем пересечения (комментарий «съедает» строку внутри,
- *  строка — ключевое слово и т. д.) и склеиваем html слева направо. Каждый
- *  кусок экранируется отдельно; меняется, как и везде в подсветке, ТОЛЬКО цвет. */
-function hlCode(raw: string, rules: CodeRules, C: EditorColors): string {
-  const matches: { s: number; e: number; color: string }[] = []
-  const collect = (re: RegExp, color: string) => {
-    const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g')
-    let m: RegExpExecArray | null
-    while ((m = g.exec(raw))) {
-      if (m[0] === '') break
-      matches.push({ s: m.index, e: m.index + m[0].length, color })
-    }
-  }
-  if (rules.comment) collect(rules.comment, C.codeCom)
-  // Строки в одинарных/двойных кавычках и бэктиках (с учётом \-экранирования).
-  collect(/(["'`])(?:\\.|(?!\1).)*\1/g, C.codeStr)
-  collect(/\b\d+(?:\.\d+)?\b/g, C.codeNum)
-  if (rules.kw) collect(rules.kw, C.codeKw)
+type Token = { s: number; e: number; color: string }
 
-  // Ранний токен главнее; при равном старте — более длинный.
+/** Собирает все совпадения `re` в строке как токены одного цвета. */
+function collect(raw: string, re: RegExp, color: string, out: Token[]): void {
+  const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g')
+  let m: RegExpExecArray | null
+  while ((m = g.exec(raw))) {
+    if (m[0] === '') break
+    out.push({ s: m.index, e: m.index + m[0].length, color })
+  }
+}
+
+/** Склеивает html строки из токенов: пересечения отбрасываются (ранний токен
+ *  главнее, при равном старте — более длинный: комментарий «съедает» строку
+ *  внутри, строка — ключевое слово и т. д.). Каждый кусок экранируется
+ *  отдельно; меняется, как и везде в подсветке, ТОЛЬКО цвет. */
+function paintTokens(raw: string, matches: Token[]): string {
   matches.sort((a, b) => a.s - b.s || b.e - a.e)
   const out: string[] = []
   let pos = 0
@@ -128,6 +193,38 @@ function hlCode(raw: string, rules: CodeRules, C: EditorColors): string {
   }
   out.push(esc(raw.slice(pos)))
   return out.join('')
+}
+
+/** Подсветка одной строки кода. */
+function hlCode(raw: string, rules: CodeRules, C: EditorColors): string {
+  const matches: Token[] = []
+  if (rules.comment) collect(raw, rules.comment, C.codeCom, matches)
+  // Строки в одинарных/двойных кавычках и бэктиках (с учётом \-экранирования).
+  collect(raw, /(["'`])(?:\\.|(?!\1).)*\1/g, C.codeStr, matches)
+  collect(raw, /\b\d+(?:\.\d+)?\b/g, C.codeNum, matches)
+  if (rules.kw) collect(raw, rules.kw, C.codeKw, matches)
+  // Вызов функции — идентификатор перед «(». При равном токене ключевое слово
+  // собрано раньше и побеждает (сортировка стабильна): `if (` остаётся ключевым.
+  collect(raw, /\b[A-Za-z_]\w*(?=\s*\()/g, C.codeFn, matches)
+  return paintTokens(raw, matches)
+}
+
+const MERMAID_KW = new RegExp(
+  '\\b(?:graph|flowchart|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|journey|mindmap|timeline|gitGraph' +
+    '|subgraph|end|direction|participant|actor|activate|deactivate|autonumber|note|over|loop|alt|else|opt|par|and|critical|break' +
+    '|class|classDef|style|linkStyle|click|state|title|section|dateFormat|axisFormat|TD|TB|BT|LR|RL)\\b',
+  'g',
+)
+
+/** Подсветка строки внутри ```mermaid: подписи в скобках/кавычках/|…|,
+ *  стрелки рёбер, ключевые слова диаграмм и комментарии %%. */
+function hlMermaid(raw: string, C: EditorColors): string {
+  const matches: Token[] = []
+  collect(raw, /%%.*$/, C.codeCom, matches)
+  collect(raw, /"[^"]*"|\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|\|[^|]*\|/g, C.mmLabel, matches)
+  collect(raw, /<?[-=.]{2,}>{0,2}|-+>>?/g, C.mmArrow, matches)
+  collect(raw, MERMAID_KW, C.mmKw, matches)
+  return paintTokens(raw, matches)
 }
 
 function hlInline(t: string, C: EditorColors): string {
@@ -142,18 +239,20 @@ function hlInline(t: string, C: EditorColors): string {
   // видимого текста (особенно на больших документах). Поэтому НИКАКОГО
   // font-weight / font-style / font-size / padding — только цвет и фон.
   t = t.replace(/`([^`]+)`/g, (_, c) =>
-    stash('<span style="background:' + C.chipBg + ';border-radius:3px">`' + c + '`</span>'),
+    stash('<span style="color:' + C.code + ';background:' + C.chipBg + ';border-radius:3px">`' + c + '`</span>'),
   )
-  t = t.replace(/\$([^$\n]+)\$/g, (_, c) => stash('<span style="color:' + C.math + '">$' + c + '$</span>'))
+  t = t.replace(/\$([^$\n]+)\$/g, (_, c) =>
+    stash('<span style="color:' + C.math + ';background:' + C.chipBg + ';border-radius:3px">$' + c + '$</span>'),
+  )
   t = t.replace(/\*\*([^*]+)\*\*/g, (_, c) =>
     stash(
-      '<span style="color:' + C.dim + '">**</span><span style="color:' + C.mark + '">' + c +
+      '<span style="color:' + C.dim + '">**</span><span style="color:' + C.bold + '">' + c +
         '</span><span style="color:' + C.dim + '">**</span>',
     ),
   )
   t = t.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, (_, a, u) =>
     stash(
-      '<span style="color:' + C.mark + '">![' + a + ']</span><span style="color:' + C.dim + '">(' + u + ')</span>',
+      '<span style="color:' + C.image + '">![' + a + ']</span><span style="color:' + C.dim + '">(' + u + ')</span>',
     ),
   )
   t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, a, u) =>
@@ -163,7 +262,7 @@ function hlInline(t: string, C: EditorColors): string {
   )
   t = t.replace(/\*([^*]+)\*/g, (_, c) =>
     stash(
-      '<span style="color:' + C.dim + '">*</span><span style="color:' + C.link + '">' + c +
+      '<span style="color:' + C.dim + '">*</span><span style="color:' + C.italic + '">' + c +
         '</span><span style="color:' + C.dim + '">*</span>',
     ),
   )
@@ -171,21 +270,63 @@ function hlInline(t: string, C: EditorColors): string {
   return t
 }
 
+/** Строка таблицы: `|` цветом таблицы, строка-разделитель `| --- |` приглушена,
+ *  содержимое ячеек — обычная inline-подсветка. */
+function hlTableRow(line: string, C: EditorColors): string {
+  const pipe = '<span style="color:' + C.table + '">|</span>'
+  if (/^\s*\|[\s:\-|]+\|?\s*$/.test(line))
+    return line
+      .split('|')
+      .map((cell) => (cell ? '<span style="color:' + C.dim + '">' + esc(cell) + '</span>' : ''))
+      .join(pipe)
+  return line
+    .split('|')
+    .map((cell) => hlInline(esc(cell), C))
+    .join(pipe)
+}
+
+/**
+ * Подсветка markdown для overlay-слоя `<pre>` поверх textarea.
+ *
+ * Блоки ```…``` (код и mermaid) и формулы $$…$$ оборачиваются в рамку — `<span>` с
+ * `display:block`, фоном и скруглением, БЕЗ padding/margin/border: блок
+ * занимает ту же ширину, что и текст вокруг, поэтому строки переносятся так же,
+ * как в textarea. Перевод строки после блока кладётся ВНУТРЬ рамки: завершающий
+ * перевод строки блока не рисует пустой строки, а ведущий перевод строки после
+ * блока нарисовал бы лишнюю. По той же причине вызывающий передаёт `md + '\n'`
+ * (см. EditorPane), а не дописывает перевод строки после html.
+ */
 export function highlight(md: string, C: EditorColors): string {
   const lines = md.split('\n')
   let inF = false
+  let inMermaid = false
+  let inMath = false
   let rules: CodeRules = { comment: null, kw: null }
-  const out = lines.map((line) => {
+  const lineHtml = (line: string): string => {
     const e = esc(line)
     const t = line.trim()
+    if (inMath) {
+      // Многострочная формула закрывается первой строкой с `$$` (как в markdown.ts).
+      if (line.includes('$$')) inMath = false
+      return '<span style="color:' + C.math + '">' + e + '</span>'
+    }
     if (/^```/.test(t)) {
       inF = !inF
-      if (inF) rules = codeRules(t.slice(3).trim())
+      const lang = t.slice(3).trim()
+      inMermaid = inF && lang.toLowerCase() === 'mermaid'
+      if (inF) rules = codeRules(lang)
+      if (inMermaid) {
+        const at = line.indexOf('```') + 3
+        return (
+          '<span style="color:' + C.fence + '">' + esc(line.slice(0, at)) + '</span>' +
+          '<span style="color:' + C.mmKw + '">' + esc(line.slice(at)) + '</span>'
+        )
+      }
       return '<span style="color:' + C.fence + '">' + e + '</span>'
     }
-    if (inF) return hlCode(line, rules, C)
+    if (inF) return inMermaid ? hlMermaid(line, C) : hlCode(line, rules, C)
     let m: RegExpMatchArray | null
-    if ((m = line.match(/^(#{1,3})(\s+)(.*)$/))) {
+    if ((m = line.match(/^(#{1,6})(\s+)(.*)$/))) {
       return (
         '<span style="color:' + C.dim + '">' + m[1] + '</span>' + m[2] +
         '<span style="color:' + C.head + '">' + hlInline(esc(m[3]), C) + '</span>'
@@ -198,15 +339,46 @@ export function highlight(md: string, C: EditorColors): string {
         hlInline(esc(line.slice(idx + 1)), C)
       )
     }
-    if (t.startsWith('$$')) return '<span style="color:' + C.math + '">' + e + '</span>'
+    if (t.startsWith('$$')) {
+      // Однострочная `$$…$$` — только если после `$$` есть содержимое и закрывающие `$$`.
+      if (!(t.length > 4 && t.endsWith('$$'))) inMath = true
+      return '<span style="color:' + C.math + '">' + e + '</span>'
+    }
+    if (/^(---+|\*\*\*+)$/.test(t))
+      // Разрыв страницы: приглушённый текст на плашке.
+      return '<span style="color:' + C.fence + ';background:' + C.chipBg + ';border-radius:3px">' + e + '</span>'
+    if (t.startsWith('|')) return hlTableRow(line, C)
     if (t.startsWith('>')) return '<span style="color:' + C.quote + '">' + e + '</span>'
-    if ((m = line.match(/^(\s*)([-*]|\d+[.)])(\s+)(.*)$/))) {
+    if ((m = line.match(/^(\s*)([-*]|\d+[.)]|[абвгдежиклмнпрстуфхцшщэюя]\))(\s+)(.*)$/))) {
       return (
         m[1] + '<span style="color:' + C.mark + '">' + m[2] + '</span>' + m[3] +
         hlInline(esc(m[4]), C)
       )
     }
     return hlInline(e, C)
+  }
+
+  const boxOpen = '<span style="display:block;background:' + C.codeBg + ';border-radius:6px">'
+  let html = ''
+  let boxed = false
+  lines.forEach((line, i) => {
+    const wasInF = inF
+    const wasInMath = inMath
+    const h = lineHtml(line)
+    // Рамку получают блоки ```…``` и формулы $$…$$ (однострочные и многострочные).
+    const mathStart = !wasInF && !wasInMath && line.trim().startsWith('$$')
+    if ((!wasInF && inF) || mathStart) {
+      html += boxOpen
+      boxed = true
+    }
+    html += h
+    if (i < lines.length - 1) html += '\n'
+    const mathEnd = (wasInMath && !inMath) || (mathStart && !inMath)
+    if (boxed && ((wasInF && !inF) || mathEnd)) {
+      html += '</span>'
+      boxed = false
+    }
   })
-  return out.join('\n')
+  if (boxed) html += '</span>' // незакрытый блок — рамка до конца документа
+  return html
 }
